@@ -1,0 +1,53 @@
+{
+  "source": "IMG_0685.mov",
+  "shots": 2,
+  "frames": 331,
+  "wing_ratio": 0.22,
+  "wings_on": 2,
+  "mean_effective": 0.4865,
+  "mean_real_wing": 0.9441,
+  "extent": {
+    "depth": 2.8571428571428577,
+    "z_near": 9.142857142857142,
+    "fraction_of_room": 0.23809523809523814,
+    "focal": 342.85714285714283,
+    "z_horizontal": 8.333333333333334,
+    "z_vertical": 9.142857142857142,
+    "binding": "vertical",
+    "depth_if_horizontal_only": 3.666666666666666
+  },
+  "per_shot": [
+    {
+      "motion": "ROTATION",
+      "backend": "mosaic",
+      "geometry": 30.4,
+      "state": "NARROW",
+      "coverage": 0.9919,
+      "effective": 0.4474,
+      "reasons": "effective 45%",
+      "displacement": 10.8,
+      "layer2": 0.012,
+      "layer_disagree": 8.2,
+      "layer2_purity": 0.364,
+      "shot": 0,
+      "start": 0,
+      "frames": 131
+    },
+    {
+      "motion": "ROTATION",
+      "backend": "mosaic",
+      "geometry": 31.3,
+      "state": "NARROW",
+      "coverage": 0.984,
+      "effective": 0.5256,
+      "reasons": "effective 53%",
+      "displacement": 17.12,
+      "layer2": 0.017,
+      "layer_disagree": 10.4,
+      "layer2_purity": 0.41,
+      "shot": 1,
+      "start": 131,
+      "frames": 200
+    }
+  ]
+}
