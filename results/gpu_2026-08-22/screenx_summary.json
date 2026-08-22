@@ -1,0 +1,25 @@
+{
+  "source": "drone.mp4",
+  "shots": 3,
+  "frames": 72,
+  "wing_ratio": 0.22,
+  "wings_on": 0,
+  "wings_generated": 0,
+  "mean_effective": 0.0647,
+  "mean_real_wing": 0.0,
+  "extent": {
+    "depth": 2.8571428571428577,
+    "z_near": 9.142857142857142,
+    "fraction_of_room": 0.23809523809523814,
+    "focal": 411.42857142857144,
+    "z_horizontal": 8.347826086956522,
+    "z_vertical": 9.142857142857142,
+    "binding": "vertical",
+    "depth_if_horizontal_only": 3.6521739130434785
+  },
+  "per_shot": [
+    {"motion": "ROTATION", "backend": "gaussian", "geometry": 17.3, "state": "OFF", "coverage": 1.0, "effective": 0.0096, "reasons": "geometry unverified (17.3 dB < 20)", "displacement": 5.07, "layer2": 0.0, "layer_disagree": 0.0, "layer2_purity": 0.0, "shot": 0, "start": 0, "frames": 24},
+    {"motion": "ROTATION", "backend": "gaussian", "geometry": 23.6, "state": "OFF", "coverage": 0.9998, "effective": 0.0292, "reasons": "wing carries no detail (3%)", "displacement": 8.54, "layer2": 0.0, "layer_disagree": 0.0, "layer2_purity": 0.0, "shot": 1, "start": 304, "frames": 24},
+    {"motion": "ROTATION", "backend": "gaussian", "geometry": 21.7, "state": "OFF", "coverage": 0.8747, "effective": 0.1553, "reasons": "effective 16% below 25%", "displacement": 17.6, "layer2": 0.022, "layer_disagree": 12.4, "layer2_purity": 0.404, "shot": 2, "start": 396, "frames": 24}
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "source": "IMG_0683.mov",
+  "shots": 1,
+  "frames": 178,
+  "wing_ratio": 0.22,
+  "wings_on": 1,
+  "wings_generated": 0,
+  "mean_effective": 0.5434,
+  "mean_real_wing": 0.984,
+  "extent": {
+    "depth": 2.860326303223239,
+    "z_near": 9.139673696776761,
+    "fraction_of_room": 0.23836052526860327,
+    "focal": 546.8571428571429,
+    "z_horizontal": 8.321739130434782,
+    "z_vertical": 9.139673696776761,
+    "binding": "vertical",
+    "depth_if_horizontal_only": 3.678260869565218
+  },
+  "per_shot": [
+    {
+      "motion": "ROTATION",
+      "backend": "mosaic",
+      "geometry": 23.5,
+      "state": "NARROW",
+      "coverage": 0.985,
+      "effective": 0.5434,
+      "reasons": "effective 54%",
+      "displacement": 35.06,
+      "layer2": 0.031,
+      "layer_disagree": 10.1,
+      "layer2_purity": 0.456,
+      "shot": 0,
+      "start": 0,
+      "frames": 178
+    }
+  ]
+}
