@@ -1,0 +1,369 @@
+<title>ScreenX Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Single-theme by decision, not omission. The page's whole job is judging
+ * footage, and a light ground changes how every frame on it reads -- the same
+ * reason the grading suites this borrows from ship dark and desaturated. Every
+ * colour is painted explicitly so the page holds on either host ground. */
+:root {
+  --bg: #141618; --panel: #1b1e21; --panel-2: #202428;
+  --line: #2a2f34; --line-soft: #22262a;
+  --ink: #e6e9ec; --dim: #8b949c; --faint: #626a72;
+  --accent: #e8913a; --real: #4da3a3; --invented: #c2557a;
+  --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 15px/1.65 var(--sans);
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 80px; }
+
+/* masthead ------------------------------------------------------------- */
+.mast { border-bottom: 1px solid var(--line); padding: 56px 0 26px; margin-bottom: 26px; }
+.eyebrow {
+  font: 500 11px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 18px;
+}
+h1 {
+  font: 600 40px/1.1 var(--sans); letter-spacing: -.02em; margin: 0 0 14px;
+  text-wrap: balance;
+}
+.lede { font-size: 17px; line-height: 1.6; color: var(--dim); max-width: 62ch; margin: 0; }
+.mast dl {
+  display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 24px 0 0;
+  font: 400 12px/1 var(--mono); color: var(--faint);
+}
+.mast dl b { color: var(--dim); font-weight: 500; }
+
+/* sections ------------------------------------------------------------- */
+section { margin: 48px 0 0; }
+h2 {
+  font: 500 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+  color: var(--faint); margin: 0 0 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+h3 { font: 600 17px/1.35 var(--sans); margin: 26px 0 8px; color: var(--ink); }
+p { max-width: 68ch; margin: 0 0 14px; color: var(--dim); }
+p.tight { margin-bottom: 6px; }
+strong { color: var(--ink); font-weight: 500; }
+em { font-style: normal; color: var(--accent); }
+
+/* readouts ------------------------------------------------------------- */
+.readouts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  border: 1px solid var(--line); background: var(--panel);
+}
+.readout { padding: 16px; border-right: 1px solid var(--line-soft); min-width: 0; }
+.readout:last-child { border-right: 0; }
+.readout .k {
+  font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint);
+}
+.readout .v {
+  font: 400 27px/1.15 var(--mono); font-variant-numeric: tabular-nums;
+  margin-top: 10px; color: var(--ink);
+}
+.readout .v em { font-size: 14px; color: var(--faint); }
+.readout .v.real { color: var(--real); }
+.readout .n { font-size: 12px; line-height: 1.45; color: var(--faint); margin-top: 6px; }
+
+/* tables --------------------------------------------------------------- */
+.scroll { overflow-x: auto; border: 1px solid var(--line); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th {
+  font: 500 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); text-align: left; padding: 11px 13px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+td {
+  padding: 10px 13px; border-bottom: 1px solid var(--line-soft);
+  color: var(--dim); white-space: nowrap;
+}
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); }
+td.wrap { white-space: normal; min-width: 260px; color: var(--faint); font-size: 12px; }
+
+.verdict {
+  font: 500 10px/1 var(--mono); letter-spacing: .08em; padding: 3px 7px;
+  border: 1px solid currentColor; display: inline-block;
+}
+.v-FULL { color: var(--real); }
+.v-NARROW { color: var(--real); opacity: .85; }
+.v-BORROWED { color: var(--accent); }
+.v-GEN { color: var(--invented); }
+.v-OFF { color: var(--faint); }
+
+/* media ---------------------------------------------------------------- */
+figure { margin: 20px 0 0; }
+video, img.shot { display: block; width: 100%; height: auto; border: 1px solid var(--line); background: #0d0f10; }
+figcaption { font-size: 12px; line-height: 1.6; color: var(--faint); margin-top: 10px; max-width: 68ch; }
+
+/* provenance bar ------------------------------------------------------- */
+.provbar { display: flex; height: 10px; border: 1px solid var(--line); margin-top: 4px; }
+.provbar i { display: block; }
+.legend { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--faint); }
+.legend b { font: 400 12px/1 var(--mono); color: var(--ink); }
+.sw { display: inline-block; width: 9px; height: 9px; margin-right: 7px; }
+
+/* ladder --------------------------------------------------------------- */
+.ladder { border: 1px solid var(--line); background: var(--panel); }
+.rung {
+  display: grid; grid-template-columns: 26px 132px 1fr auto; gap: 14px;
+  align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--line-soft);
+}
+.rung:last-child { border-bottom: 0; }
+.rung .i { font: 400 11px/1.4 var(--mono); color: var(--faint); }
+.rung .name { font: 500 12px/1.4 var(--mono); letter-spacing: .06em; }
+.rung .what { font-size: 13px; color: var(--dim); }
+.rung .fired { font: 400 10px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+.rung.photo .name { color: var(--real); }
+.rung.notphoto .name { color: var(--invented); }
+.rung .fired.yes { color: var(--real); }
+
+.split { display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 860px) { .split { grid-template-columns: 1fr 1fr; } }
+
+.callout {
+  border-left: 2px solid var(--accent); background: var(--panel);
+  padding: 14px 18px; margin: 20px 0 0;
+}
+.callout p { margin: 0; color: var(--dim); }
+.callout p + p { margin-top: 10px; }
+
+footer {
+  margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--faint);
+}
+code { font: 400 12px/1.5 var(--mono); color: var(--dim); background: var(--panel-2); padding: 2px 6px; }
+pre { margin: 16px 0 0; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); overflow-x: auto; font: 400 12px/1.65 var(--mono); color: var(--dim); }
+pre b { color: var(--ink); font-weight: 400; }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">270° conversion &middot; measurement report</div>
+  <h1>ScreenX Studio</h1>
+  <p class="lede">A tool for deciding which shots in a film have earned their side
+  walls — and for saying, per shot, how much of what lands on those walls was
+  actually photographed rather than invented.</p>
+  <dl>
+    <span><b>Measured</b> 22 August 2026</span>
+    <span><b>Footage</b> handheld, phone, unstaged</span>
+    <span><b>Compute</b> laptop CPU + one Colab T4</span>
+    <span><b>Suite</b> 413 assertions</span>
+  </dl>
+</header>
+
+<section>
+  <h2>The result</h2>
+  <p>A 5.9-second handheld pan across a food court. The camera moves, so the wall
+  behind it is territory the lens has already crossed — and the toolkit recovers
+  it rather than drawing it.</p>
+
+  <div class="readouts">
+    <div class="readout">
+      <div class="k">Real wing pixels</div>
+      <div class="v real">98.7%</div>
+      <div class="n">photographed, both wings</div>
+    </div>
+    <div class="readout">
+      <div class="k">Invented</div>
+      <div class="v">1.3%</div>
+      <div class="n">nothing generated was requested</div>
+    </div>
+    <div class="readout">
+      <div class="k">Geometry</div>
+      <div class="v">23.5<em> dB</em></div>
+      <div class="n">gate refuses below 20</div>
+    </div>
+    <div class="readout">
+      <div class="k">Effective coverage</div>
+      <div class="v">54.3%</div>
+      <div class="n">staleness and detail weighted</div>
+    </div>
+    <div class="readout">
+      <div class="k">Wall depth</div>
+      <div class="v">2.86<em> m</em></div>
+      <div class="n">23.8% of the modeled room</div>
+    </div>
+  </div>
+
+  <figure>
+    <video controls preload="metadata" poster="">
+      <source src="{{CAFE_MP4}}" type="video/mp4">
+    </video>
+    <figcaption>Centre is the original frame; the outer thirds are the side walls.
+    The first half plays as a screening. The second half is the reveal, where every
+    pixel not filmed at this place is tinted magenta — here, almost none of it.</figcaption>
+  </figure>
+
+  <div class="provbar" role="img" aria-label="98.7 percent filmed, 1.3 percent invented">
+    <i class="" style="width:98.7%;background:var(--real)"></i>
+    <i class="" style="width:1.3%;background:var(--invented)"></i>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--real)"></i>filmed at this place <b>98.7%</b></span>
+    <span><i class="sw" style="background:var(--invented)"></i>not filmed here <b>1.3%</b></span>
+  </div>
+</section>
+
+<section>
+  <h2>Every clip measured</h2>
+  <p>Four sources, unedited results. The spread is the finding: what decides a
+  conversion is how the camera moved, not how good the reconstruction was.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr>
+        <th>Source</th><th>Shots</th><th>Best geometry</th><th>Effective</th>
+        <th>Real wing</th><th>What it shows</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>Café pan, 5.9 s</td><td class="n">1</td><td class="n">23.5 dB</td>
+          <td class="n">54.3%</td><td class="n" style="color:var(--real)">98.7%</td>
+          <td class="wrap">Lateral motion through a textured room. The best case.</td>
+        </tr>
+        <tr>
+          <td>Apartment walk, 53.8 s</td><td class="n">5</td><td class="n">32.0 dB</td>
+          <td class="n">45.7%</td><td class="n">61.0%</td>
+          <td class="wrap">Walking gives translation, so geometry is the highest recorded — four of five shots lit.</td>
+        </tr>
+        <tr>
+          <td>Drone over park, 33.2 s</td><td class="n">6</td><td class="n">23.6 dB</td>
+          <td class="n">15.5%</td><td class="n">0.0%</td>
+          <td class="wrap">Verified geometry, refused anyway: at altitude there is nothing beside the frame to recover.</td>
+        </tr>
+        <tr>
+          <td>Cut trailer, 120 s</td><td class="n">78</td><td class="n">27.6 dB</td>
+          <td class="n">6.2%</td><td class="n">3.4%</td>
+          <td class="wrap">Median shot 1.2 s. Nothing propagates across a cut.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>What it refuses, and why that is the point</h2>
+  <p>Any tool can fill a wall. The measurement only means something if the tool
+  will decline — so three gates run before anything is kept, and a shot that fails
+  one is recorded with the number that failed it.</p>
+
+  <div class="split">
+    <div>
+      <h3>Geometry it cannot verify</h3>
+      <p class="tight">A frame is hidden, rebuilt from its neighbours alone, and scored
+      against the real one. Below <em>20 dB</em> the shot is refused.</p>
+      <pre>shot 0  ROTATION  <b>OFF</b>   geom 17.3 dB
+        geometry unverified (17.3 dB &lt; 20)</pre>
+    </div>
+    <div>
+      <h3>A wall with nothing on it</h3>
+      <p class="tight">The rasteriser filled the whole wing, and the wing was
+      featureless. Coverage 1.00, detail <em>3%</em>, refused.</p>
+      <pre>shot 1  ROTATION  <b>OFF</b>   geom 23.6 dB
+        wing carries no detail (3%)</pre>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>The refusal that mattered most was structural.</strong> On the drone
+    footage the 3D path returned poses it could not vouch for, and the backend
+    raised rather than rendered. That exception escaped and killed the whole run —
+    every other shot's verdict, and the summary itself, went with it.</p>
+    <p>A refusal is the product here, so it now lands as that shot's verdict and the
+    film carries on. Six assertions hold it in place, including that nothing outside
+    the frame gets labelled real on a shot that was refused.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Where every pixel came from</h2>
+  <p>Seven rungs, in order of what they can prove. The line between rung 4 and 5 is
+  the one the headline number depends on: above it, real photons from this place.
+  Below it, something else wearing the same colours.</p>
+  <div class="ladder">
+    <div class="rung photo"><span class="i">0</span><span class="name">PRIMARY</span>
+      <span class="what">The original frame, untouched and byte-identical</span><span class="fired yes">always</span></div>
+    <div class="rung photo"><span class="i">1</span><span class="name">RECOVERED</span>
+      <span class="what">This shot's own periphery, seen earlier in the same take</span><span class="fired yes">fired · 98.7%</span></div>
+    <div class="rung photo"><span class="i">2</span><span class="name">DONATED</span>
+      <span class="what">The same take in another cut, framed wider</span><span class="fired yes">fired · 8.4%</span></div>
+    <div class="rung photo"><span class="i">3</span><span class="name">RETRIEVED</span>
+      <span class="what">Another setup of the same location, bridged in 3D</span><span class="fired">needs COLMAP</span></div>
+    <div class="rung notphoto"><span class="i">4</span><span class="name">REFERENCED</span>
+      <span class="what">A licensed image of the place — a camera, but not this one</span><span class="fired yes">fired · 2.3%</span></div>
+    <div class="rung notphoto"><span class="i">5</span><span class="name">DIRECTED</span>
+      <span class="what">Someone who knows the room said what is there</span><span class="fired yes">fired · 23.1%</span></div>
+    <div class="rung notphoto"><span class="i">6</span><span class="name">GENERATED</span>
+      <span class="what">Invented. Counted as invented, always</span><span class="fired yes">fired</span></div>
+  </div>
+  <p style="margin-top:14px">Generated pixels are structurally unable to overwrite
+  recovered ones: the generator receives a read-only view and the composite is
+  checked byte-for-byte afterwards. A tool that paints outside its hole raises
+  rather than returns.</p>
+</section>
+
+<section>
+  <h2>When there is nothing to recover</h2>
+  <p>On a shot the gate refuses, the walls can still be drawn — and are then
+  labelled invented, which is why the honesty number cannot move when you turn
+  this on. A hosted video model fills a whole shot in one submission, because
+  per-frame generation makes walls crawl in peripheral vision.</p>
+  <figure>
+    <img class="shot" src="{{WS_PNG}}" alt="Above: the source frame with empty side walls. Below: the model's extension of it.">
+    <figcaption>Above, the source frame with empty walls. Below, what the model drew:
+    the counter and wall continued left, shelving and a figure added right. The centre
+    came back untouched — 4.1 mean absolute difference, pure recompression.</figcaption>
+  </figure>
+  <figure>
+    <img class="shot" src="{{REVEAL_PNG}}" alt="Two frames from the reveal pass, one recovered and one invented.">
+    <figcaption>Both frames are from the same reveal pass. The upper shot's walls are
+    recovered and read clean; the lower shot was refused and generated, so the reveal
+    lights it magenta. Same film, same report, different provenance.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>Status, stated plainly</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Question</th><th>Answer</th><th>Evidence</th></tr></thead>
+      <tbody>
+        <tr><td class="wrap" style="color:var(--dim)">Can it fill walls with real filmed pixels?</td>
+          <td style="color:var(--real)">Yes</td>
+          <td class="wrap">98.7% of both wings on the café pan, nothing generated</td></tr>
+        <tr><td class="wrap" style="color:var(--dim)">Does it build trustworthy 3D from real footage?</td>
+          <td style="color:var(--real)">Yes</td>
+          <td class="wrap">100% COLMAP registration on three scenes; 22.7 dB placement against known truth on a T4</td></tr>
+        <tr><td class="wrap" style="color:var(--dim)">Does the 3D path fill walls?</td>
+          <td style="color:var(--invented)">No</td>
+          <td class="wrap">Verified geometry, still refused — lateral motion fills walls, reconstruction quality does not</td></tr>
+        <tr><td class="wrap" style="color:var(--dim)">Can a close-up borrow from a wide of the same room?</td>
+          <td style="color:var(--invented)">No</td>
+          <td class="wrap">Measured twice: 48% and 50% registration, both under the 80% bar</td></tr>
+        <tr><td class="wrap" style="color:var(--dim)">Has every rung fired?</td>
+          <td style="color:var(--accent)">Six of seven</td>
+          <td class="wrap">One run of an apartment walk landed RECOVERED 65.4%, DIRECTED 23.1%,
+            DONATED 8.4%, REFERENCED 2.3%, GENERATED 0.7%. Only RETRIEVED is left, and it
+            needs COLMAP on the machine</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:16px">The fourth row was the original goal of the project. Two
+  independent measurements say it does not survive contact with real footage, which
+  is a finding rather than a gap — and the reason the answer to the first row is what
+  it is.</p>
+</section>
+
+<footer>
+  Every figure on this page comes from a run recorded in the repository, not from a
+  reconstruction of one. Wall geometry assumes a 14 m screen at 12 m viewing distance.
+</footer>
+
+</div>

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScreenX Studio</title>
+<link rel="stylesheet" href="/static/screenx.css">
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">ScreenX Studio <span>&middot; wing conversion</span></div>
+    <nav class="stages" id="stages">
+      <button class="stage" data-stage="load" aria-current="true">Load</button>
+      <button class="stage" data-stage="analyse" disabled>Analyse</button>
+      <button class="stage" data-stage="render" disabled>Render</button>
+      <button class="stage" data-stage="review" disabled>Review</button>
+      <button class="stage" data-stage="report" disabled>Report</button>
+    </nav>
+  </div>
+
+  <!-- ------------------------------------------------------------ LOAD -->
+  <main class="workspace" data-panel="load">
+    <div class="cols cols-2">
+      <section class="panel">
+        <header>Source clip <span class="right" id="jobid"></span></header>
+        <div class="body">
+          <div class="dropzone" id="drop">
+            <b>Drop a clip, or click to choose</b>
+            mp4 &middot; mov &middot; m4v &middot; avi &middot; mkv &middot; webm
+          </div>
+          <input type="file" id="file" accept="video/*" hidden>
+          <div id="probe"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>This machine</header>
+        <div class="body" id="caps"><div class="note">checking&hellip;</div></div>
+      </section>
+    </div>
+
+    <section class="panel" id="attachpanel" hidden>
+      <header>Attach further material <span class="right">optional</span></header>
+      <div class="body">
+        <p class="note">Each of these unlocks a different rung. They are separate
+          claims about where pixels may come from, so they are never one bucket.</p>
+        <div class="cols" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+          <div>
+            <label class="field">Another cut of the same picture
+              <input type="file" data-attach="other_cut" accept="video/*" multiple>
+            </label>
+            <p class="note">A TV spot or teaser. Where it framed a take wider, it
+              donates real periphery &mdash; <strong>DONATED</strong>.</p>
+          </div>
+          <div>
+            <label class="field">Another setup of the same location
+              <input type="file" data-attach="also" accept="video/*" multiple>
+            </label>
+            <p class="note">The master wide beside this close-up. Reconstructed in
+              3D &mdash; <strong>RETRIEVED</strong>.</p>
+          </div>
+          <div>
+            <label class="field">Context files
+              <input type="file" data-attach="context" multiple
+                     accept=".srt,.vtt,.txt,.fountain,.json,.md,.png,.jpg,.jpeg">
+            </label>
+            <p class="note">Subtitles, a screenplay, stills, notes. Someone's
+              claim about the place &mdash; <strong>DIRECTED</strong>, never filmed.</p>
+          </div>
+        </div>
+        <div id="attached" class="note" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>Previous jobs <span class="right" id="jobcount"></span></header>
+      <div class="body flush scroll">
+        <table id="jobs">
+          <thead><tr><th>Job</th><th>Source</th><th>State</th><th>Real wing</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- --------------------------------------------------------- ANALYSE -->
+  <main class="workspace" data-panel="analyse" hidden>
+    <section class="panel">
+      <header>Shot detection <span class="right" id="analysemeta"></span></header>
+      <div class="body">
+        <p class="note">The cheap pass, before committing to a render. Displacement
+          is the number worth reading: across every clip measured it tracked
+          effective coverage, so a film of locked-off shots is recognisable as a
+          poor candidate in seconds rather than after a full render.</p>
+        <button class="ghost" id="analyse">Detect shots</button>
+      </div>
+      <div class="body flush scroll">
+        <table id="analysetable">
+          <thead><tr>
+            <th>Shot</th><th>Start</th><th>Frames</th><th>Seconds</th>
+            <th>Motion</th><th>Displacement</th><th>Prospect</th>
+          </tr></thead>
+          <tbody><tr><td colspan="7" class="empty">Not analysed yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ---------------------------------------------------------- RENDER -->
+  <main class="workspace" data-panel="render" hidden>
+    <div class="cols cols-2">
+      <section class="panel">
+        <header>Conversion</header>
+        <div class="body">
+          <label class="field">Working width
+            <select id="maxw">
+              <option value="360">360 px &mdash; fastest</option>
+              <option value="480">480 px</option>
+              <option value="640" selected>640 px &mdash; recommended</option>
+              <option value="960">960 px &mdash; slow</option>
+            </select>
+          </label>
+
+          <label class="field">Frames per shot
+            <select id="fps">
+              <option value="80">80 &mdash; quick look</option>
+              <option value="200" selected>200 &mdash; recommended</option>
+              <option value="400">400</option>
+            </select>
+          </label>
+          <p class="note">Past a point the wing holds older content and staleness
+            costs more than the coverage gains. On the apartment walk 200 lit four
+            shots; 400 lit three.</p>
+
+          <label class="field">Shots
+            <select id="shots">
+              <option value="0" selected>All</option>
+              <option value="1">First only</option>
+              <option value="3">First 3</option>
+              <option value="8">First 8</option>
+            </select>
+          </label>
+
+          <label class="field">Rotation
+            <select id="rotate">
+              <option value="0" selected>None</option>
+              <option value="90">90&deg;</option>
+              <option value="180">180&deg;</option>
+              <option value="270">270&deg;</option>
+            </select>
+          </label>
+
+          <details class="advanced">
+            <summary>Rungs and generation</summary>
+            <label class="field">Invent wings where the gate refuses
+              <select id="dark">
+                <option value="" selected>Leave dark &mdash; honest</option>
+                <option value="mirror">mirror &mdash; local, no cost</option>
+                <option value="inpaint">inpaint &mdash; local</option>
+                <option value="wavespeed">wavespeed &mdash; hosted, paid per shot</option>
+                <option value="gemini-edit">gemini-edit &mdash; hosted, per frame</option>
+                <option value="diffusion">diffusion &mdash; local, needs CUDA</option>
+                <option value="hosted">hosted &mdash; your own endpoint</option>
+              </select>
+            </label>
+            <p class="note">Every invented pixel is written as <strong>GENERATED</strong>
+              and counted as invented. Nothing chosen here can move the real-wing number.</p>
+            <div id="flags"></div>
+          </details>
+
+          <details class="advanced">
+            <summary>Auditorium geometry</summary>
+            <p class="note">How far the side walls reach depends on the room, not
+              only the footage. These were reachable in code and never from a
+              command line, so in practice they were constants.</p>
+            <label class="field">Wing width, fraction of frame
+              <input type="number" id="wing" step="0.01" min="0.05" max="0.6" placeholder="0.22"></label>
+            <label class="field">Screen width, m
+              <input type="number" id="screen_width" step="0.5" placeholder="14"></label>
+            <label class="field">Screen height, m
+              <input type="number" id="screen_height" step="0.5" placeholder="6"></label>
+            <label class="field">Viewer distance, m
+              <input type="number" id="viewer_distance" step="0.5" placeholder="12"></label>
+          </details>
+
+          <details class="advanced">
+            <summary>The gate</summary>
+            <p class="note warn">Loosening these buys coverage by lowering the bar.
+              The run records which bar it used, so two summaries stay comparable.</p>
+            <label class="field">Geometry, dB
+              <input type="number" id="gate_geometry" step="0.5" placeholder="20"></label>
+            <label class="field">Effective for FULL
+              <input type="number" id="gate_full" step="0.05" placeholder="0.55"></label>
+            <label class="field">Effective for NARROW
+              <input type="number" id="gate_narrow" step="0.05" placeholder="0.25"></label>
+            <label class="field">Minimum wing detail
+              <input type="number" id="gate_detail" step="0.01" placeholder="0.10"></label>
+            <label class="field">Staleness limit, s
+              <input type="number" id="gate_stale" step="0.1" placeholder="1.20"></label>
+          </details>
+
+          <button class="go" id="run" disabled>Start conversion</button>
+          <pre class="log" id="cmd" style="max-height:110px"></pre>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>Progress <span class="right" id="runstate"></span></header>
+        <div class="body flush">
+          <div class="scroll">
+            <table id="live">
+              <thead><tr>
+                <th>Shot</th><th>Motion</th><th>Backend</th>
+                <th>Geometry</th><th>Verdict</th><th>Effective</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre class="log" id="log"></pre>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ---------------------------------------------------------- REVIEW -->
+  <main class="workspace" data-panel="review" hidden>
+    <div class="cols cols-2">
+      <section class="panel">
+        <header>Shots <span class="right" id="shotcount"></span></header>
+        <div class="body flush scroll">
+          <table id="shots">
+            <thead><tr>
+              <th>Shot</th><th>Motion</th><th>Backend</th><th>Geometry</th>
+              <th>Verdict</th><th>Effective</th><th>Reason</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>Shot detail <span class="right" id="detailid"></span></header>
+        <div class="body" id="detail"><div class="empty">Select a shot.</div></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ---------------------------------------------------------- REPORT -->
+  <main class="workspace" data-panel="report" hidden>
+    <section class="panel">
+      <header>Conversion report <span class="right" id="reportsource"></span></header>
+      <div class="readouts" id="headline"></div>
+      <div class="body">
+        <div class="provbar" id="provbar"></div>
+        <div class="legend" id="provlegend"></div>
+      </div>
+    </section>
+
+    <div class="cols cols-2">
+      <section class="panel">
+        <header>Screening and reveal</header>
+        <div class="body">
+          <video class="frame" id="video" controls preload="metadata"></video>
+          <p class="note">First half plays as the screening. Second half is the
+            reveal: every pixel not filmed at this place is tinted magenta.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>Wall geometry and gate</header>
+        <div class="body">
+          <dl class="kv" id="extent"></dl>
+          <p class="note" id="extentnote"></p>
+          <dl class="kv" id="gateused" style="margin-top:12px"></dl>
+        </div>
+      </section>
+    </div>
+
+    <div class="cols cols-2">
+      <section class="panel">
+        <header>Per-shot record <span class="right"><button class="ghost" id="dl">Download JSON</button></span></header>
+        <div class="body flush scroll">
+          <table id="finaltable">
+            <thead><tr>
+              <th>Shot</th><th>Motion</th><th>Backend</th><th>Geometry</th>
+              <th>Verdict</th><th>Coverage</th><th>Effective</th>
+              <th>Displacement</th><th>Actions</th><th>Reason</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>Job files</header>
+        <div class="body flush scroll">
+          <table id="files">
+            <thead><tr><th>File</th><th>Size</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+</div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,779 @@
+"""
+ScreenX Studio -- one interface over the whole toolkit.
+
+    python app.py                 # http://localhost:8420
+    python app.py --local         # bind 127.0.0.1 only
+    python app.py --token SECRET  # require ?t=SECRET once, then a cookie
+
+WHY THIS REPLACED THREE FRONT DOORS
+-----------------------------------
+There used to be `screenx_render.py` (18 flags), `demo.py` (11 of them) and
+`serve.py` (5 of demo's). Each layer quietly dropped capability, so the browser
+could not reach the 3D path, a second cut, the context layer or the reasoning
+step at all. This exposes the render surface directly and loses nothing.
+
+WHAT IT DOES NOT DO
+-------------------
+It does not import the pipeline. `serve.py` shelled out on purpose -- "so the
+browser and the CLI cannot drift apart" -- and that is still right: a render
+that dies takes a subprocess with it and not the server, and `screenx_render.py`
+stays the single implementation of what a run means. The one thing gained over
+scraping stdout is `--progress-json`, which hands back the per-shot record
+itself rather than a line of text to be parsed back apart.
+
+Stdlib only. `requirements.txt` is opencv + numpy and this does not add to it.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import mimetypes
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+HERE = Path(__file__).resolve().parent
+STATIC = HERE / "static"
+JOBS_DIR = HERE / "jobs"
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+MAX_BYTES = 4 << 30
+CHUNK = 1 << 16
+
+JOBS: dict[str, dict] = {}
+LOCK = threading.Lock()
+SLOT = threading.Semaphore(1)      # the pipeline is CPU-bound: one clip at a time
+TOKEN = ""
+
+
+# ------------------------------------------------------------------ capability
+
+def _has(binary: str) -> bool:
+    return shutil.which(binary) is not None
+
+
+def capabilities() -> dict:
+    """
+    What this machine can do right now, with the reason when it cannot.
+
+    The UI greys out what is unavailable and shows the reason, instead of
+    letting someone tick --prefer-3d on a GPU-less box and wait several minutes
+    to be told the backend refuses.
+    """
+    caps = {}
+
+    try:
+        import backends as bk
+        cuda = bool(bk.GaussianBackend.available())
+    except Exception as e:
+        cuda, reason = False, f"{type(e).__name__}"
+    caps["gpu"] = dict(ok=cuda, label="CUDA / gaussian backend",
+                       reason="" if cuda else "no CUDA device visible",
+                       enables=["prefer_3d"])
+
+    try:
+        import sfm
+        colmap = bool(sfm.colmap_available())
+    except Exception:
+        colmap = False
+    caps["colmap"] = dict(ok=colmap, label="COLMAP",
+                          reason="" if colmap else "colmap not on PATH",
+                          enables=["sfm"])
+
+    caps["ffmpeg"] = dict(ok=_has("ffmpeg"), label="ffmpeg",
+                          reason="" if _has("ffmpeg") else "ffmpeg not on PATH",
+                          enables=["web_encode"])
+
+    ws = bool(os.environ.get("WAVESPEED_API_KEY") or os.environ.get("SCREENX_TOKEN"))
+    caps["wavespeed"] = dict(ok=ws, label="WaveSpeed outpainter",
+                             reason="" if ws else "WAVESPEED_API_KEY not set",
+                             enables=["wings_on_dark:wavespeed"])
+
+    gem, why = False, "no credential"
+    try:
+        import gemini
+        if os.environ.get("GEMINI_API_KEY"):
+            gem, why = True, ""
+        elif gemini.adc_project():
+            gem, why = True, ""
+            why = ""
+    except Exception as e:
+        why = type(e).__name__
+    caps["gemini"] = dict(ok=gem, label="Gemini vision",
+                          reason="" if gem else why, enables=["vision"])
+    return caps
+
+
+# ------------------------------------------------------------------ job model
+
+def under(root: Path, rel: str) -> Path | None:
+    """
+    Resolve rel under root, or None if it escapes.
+
+    An absolute path handed to `/` discards the left operand entirely, so this
+    has to compare the resolved result rather than trust the join.
+    """
+    try:
+        target = (root / rel).resolve()
+        target.relative_to(root.resolve())
+    except (ValueError, OSError):
+        return None
+    return target
+
+
+CONTEXT_EXT = {".srt", ".vtt", ".txt", ".fountain", ".json", ".md",
+               ".png", ".jpg", ".jpeg"}
+
+
+def context_name(raw: str) -> str:
+    """
+    A context file we are willing to write.
+
+    Subtitles and screenplays bind to a shot and make its wings DIRECTED, which
+    is a rung, not a decoration -- so the allow-list is explicit rather than
+    "anything that is not a video".
+    """
+    raw = unquote(raw or "").replace("\\", "/").split("/")[-1]
+    stem = Path(raw).stem[:60]
+    ext = Path(raw).suffix.lower()
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-") or "context"
+    return stem + ext if ext in CONTEXT_EXT else ""
+
+
+def read_span(cap, crop, a, b, maxw, n):
+    """Evenly spaced frames from one shot, for the cheap analysis pass."""
+    import cv2
+    import numpy as np
+    x0, y0, x1, y1 = crop
+    out = []
+    for i in np.linspace(a, max(a, b - 1), n).astype(int):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(i))
+        ok, f = cap.read()
+        if not ok:
+            break
+        f = f[y0:y1, x0:x1]
+        if f.shape[1] > maxw:
+            sc = maxw / f.shape[1]
+            f = cv2.resize(f, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+        out.append(f)
+    return out
+
+
+def safe_name(raw: str) -> str:
+    """A filename we are willing to write to disk. Ported from serve.py."""
+    raw = unquote(raw or "").replace("\\", "/").split("/")[-1]
+    stem = Path(raw).stem[:60]
+    ext = Path(raw).suffix.lower()
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-") or "clip"
+    if ext not in VIDEO_EXT:
+        return ""
+    return stem + ext
+
+
+def clamp(opts: dict) -> dict:
+    """
+    Server-side bounds. The browser is not trusted to have sent sane numbers,
+    and a maxw of 40000 is a machine hang rather than a bad render.
+    """
+    def num(key, lo, hi, default):
+        try:
+            return max(lo, min(hi, int(opts.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
+    def rng(key, lo, hi):
+        """An optional float. Absent means the pipeline default stands."""
+        raw = opts.get(key)
+        if raw in (None, ""):
+            return None
+        try:
+            return max(lo, min(hi, float(raw)))
+        except (TypeError, ValueError):
+            return None
+
+    gens = ("mirror", "inpaint", "diffusion", "hosted", "wavespeed", "gemini-edit")
+    dark = opts.get("wings_on_dark") or None
+    return dict(
+        maxw=num("maxw", 160, 1920, 640),
+        frames_per_shot=num("frames_per_shot", 20, 2000, 200),
+        max_shots=num("max_shots", 0, 999, 0),
+        rotate=int(opts.get("rotate", 0)) if int(opts.get("rotate", 0) or 0)
+        in (0, 90, 180, 270) else 0,
+        wings_on_dark=dark if dark in gens else None,
+        sources=bool(opts.get("sources")),
+        prefer_3d=bool(opts.get("prefer_3d")),
+        sfm=bool(opts.get("sfm")),
+        reason=bool(opts.get("reason")),
+        vision=bool(opts.get("vision")),
+        online=bool(opts.get("online")),
+        library=(opts.get("library") or None),
+        **{k: rng(k, lo, hi) for k, lo, hi in (
+            ("wing", 0.05, 0.60),
+            ("screen_width", 3.0, 40.0), ("screen_height", 2.0, 25.0),
+            ("viewer_distance", 2.0, 60.0), ("wing_dim", 0.2, 1.0),
+            ("gate_geometry", 0.0, 60.0),
+            ("gate_full", 0.05, 1.0), ("gate_narrow", 0.01, 1.0),
+            ("gate_detail", 0.0, 1.0), ("gate_stale", 0.05, 30.0))},
+    )
+
+
+def build_argv(clip: Path, outdir: Path, opts: dict) -> list:
+    """
+    The exact command line this job runs.
+
+    Kept as one pure function so a test can assert the UI produces the same argv
+    as the documented CLI line, rather than the two drifting the way demo.py and
+    screenx_render.py did.
+    """
+    o = clamp(opts)
+    argv = [sys.executable, "-u", str(HERE / "screenx_render.py"), str(clip),
+            "-o", str(outdir), "--maxw", str(o["maxw"]),
+            "--frames-per-shot", str(o["frames_per_shot"]),
+            "--progress-json"]
+    if o["max_shots"]:
+        argv += ["--max-shots", str(o["max_shots"])]
+    if o["rotate"]:
+        argv += ["--rotate", str(o["rotate"])]
+    if o["wings_on_dark"]:
+        argv += ["--wings-on-dark", o["wings_on_dark"]]
+    if o["sources"]:
+        argv += ["--sources"]
+    if o["sfm"]:
+        argv += ["--sfm", str(outdir / "sfm")]
+    if o["prefer_3d"]:
+        argv += ["--prefer-3d"]
+    if o["reason"]:
+        argv += ["--reason"]
+    if o["vision"]:
+        argv += ["--vision"]
+    if o["online"]:
+        argv += ["--online"]
+    if o["library"]:
+        argv += ["--library", str(o["library"])]
+
+    # geometry and gate: reachable in code since the beginning and never from a
+    # command line, so in practice the wing width and the bar were constants
+    for flag, key in (("--wing", "wing"), ("--screen-width", "screen_width"),
+                      ("--screen-height", "screen_height"),
+                      ("--viewer-distance", "viewer_distance"),
+                      ("--wing-dim", "wing_dim"),
+                      ("--gate-geometry", "gate_geometry"),
+                      ("--gate-full", "gate_full"),
+                      ("--gate-narrow", "gate_narrow"),
+                      ("--gate-detail", "gate_detail"),
+                      ("--gate-stale", "gate_stale")):
+        if o.get(key) is not None:
+            argv += [flag, str(o[key])]
+
+    # attachments are files the operator uploaded beside the clip: another cut
+    # for DONATED, another setup for RETRIEVED, context for DIRECTED
+    for kind, flag in (("other_cut", "--other-cut"), ("also", "--also"),
+                       ("context", "--context")):
+        for extra in (opts.get(kind) or []):
+            argv += [flag, str(extra)]
+    return argv
+
+
+def new_job(name: str) -> dict:
+    with LOCK:
+        jid = f"{time.strftime('%Y%m%d-%H%M%S')}-{len(JOBS) + 1:02d}"
+        job = dict(id=jid, name=name, state="staged", started=time.time(),
+                   dir=str(JOBS_DIR / jid), log=[], shots=[], error="",
+                   argv=[], summary=None, clip="", attachments={},
+                   analysis=None)
+        JOBS[jid] = job
+    return job
+
+
+def run_job(job: dict, clip: Path, opts: dict):
+    """Drive one render to completion. Runs on its own thread."""
+    outdir = Path(job["dir"])
+    argv = build_argv(clip, outdir, opts)
+    job["argv"] = argv
+    with SLOT:
+        job["state"] = "running"
+        job["started"] = time.time()
+        try:
+            proc = subprocess.Popen(argv, cwd=str(HERE), stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True,
+                                    bufsize=1)
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line.startswith("@@SHOT "):
+                    try:
+                        job["shots"].append(json.loads(line[7:]))
+                        continue
+                    except ValueError:
+                        pass
+                job["log"].append(line)
+                del job["log"][:-400]
+            code = proc.wait()
+        except Exception as e:
+            job["state"], job["error"] = "error", f"{type(e).__name__}: {e}"
+            return
+
+        summary = outdir / "screenx_summary.json"
+        if code == 0 and summary.exists():
+            try:
+                job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
+            except ValueError as e:
+                job["error"] = f"summary unreadable: {e}"
+            job["state"] = "done"
+        else:
+            job["state"] = "error"
+            job["error"] = job["error"] or (
+                "no shots rendered" if code else "render produced no summary")
+
+
+def known_jobs() -> list:
+    """Live jobs plus anything already on disk, so a restart loses nothing."""
+    out = {j["id"]: dict(id=j["id"], name=j["name"], state=j["state"],
+                         started=j["started"],
+                         real=(j.get("summary") or {}).get("mean_real_wing"))
+           for j in JOBS.values()}
+    if JOBS_DIR.exists():
+        for d in sorted(JOBS_DIR.iterdir(), reverse=True):
+            if d.is_dir() and (d / "screenx_summary.json").exists() and d.name not in out:
+                try:
+                    s = json.loads((d / "screenx_summary.json").read_text(encoding="utf-8"))
+                except ValueError:
+                    continue
+                out[d.name] = dict(id=d.name, name=s.get("source", d.name),
+                                   state="done", started=d.stat().st_mtime,
+                                   real=s.get("mean_real_wing"))
+    return sorted(out.values(), key=lambda j: j["started"], reverse=True)[:40]
+
+
+# ------------------------------------------------------------------ http
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ScreenXStudio"
+
+    def log_message(self, fmt, *args):
+        pass                                    # the render log is the useful one
+
+    # -- plumbing
+
+    def _write(self, buf: bytes):
+        try:
+            self.wfile.write(buf)
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+
+    def _send(self, code, body: bytes, ctype="application/json", extra=()):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in extra:
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self._write(body)
+
+    def _json(self, obj, code=200):
+        self._send(code, json.dumps(obj, default=str).encode())
+
+    def _file(self, path: Path):
+        """Static send with Range support, so video scrubbing works."""
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        size = path.stat().st_size
+        start, end, code = 0, size - 1, 200
+
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "") or "")
+        if m and size:
+            lo, hi = m.group(1), m.group(2)
+            if lo:
+                start = min(int(lo), size - 1)
+                end = min(int(hi), size - 1) if hi else size - 1
+            elif hi:
+                start = max(0, size - int(hi))
+            if start <= end:
+                code = 206
+
+        length = end - start + 1
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if code == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            left = length
+            while left > 0:
+                buf = fh.read(min(CHUNK, left))
+                if not buf:
+                    break
+                self._write(buf)
+                left -= len(buf)
+
+    def _allowed(self) -> bool:
+        if not TOKEN:
+            return True
+        q = parse_qs(urlparse(self.path).query)
+        return (q.get("t", [""])[0] == TOKEN
+                or f"sxtoken={TOKEN}" in (self.headers.get("Cookie") or ""))
+
+    # -- routes
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_GET(self):
+        route = urlparse(self.path).path
+        if not self._allowed():
+            return self._send(403, b"forbidden", "text/plain")
+
+        if route in ("/", "/index.html"):
+            extra = ()
+            if TOKEN and parse_qs(urlparse(self.path).query).get("t"):
+                extra = (("Set-Cookie", f"sxtoken={TOKEN}; Path=/; SameSite=Lax"),)
+            return self._file_or_404(STATIC / "index.html", extra)
+
+        if route == "/api/capabilities":
+            return self._json(capabilities())
+
+        if route == "/api/jobs":
+            return self._json(known_jobs())
+
+        m = re.match(r"^/api/jobs/([\w.-]+)$", route)
+        if m:
+            job = JOBS.get(m.group(1)) or self._from_disk(m.group(1))
+            return self._json(job or {"error": "no such job"}, 200 if job else 404)
+
+        m = re.match(r"^/api/jobs/([\w.-]+)/events$", route)
+        if m:
+            return self._events(m.group(1))
+
+        m = re.match(r"^/api/jobs/([\w.-]+)/files$", route)
+        if m:
+            return self._files(m.group(1))
+
+        m = re.match(r"^/api/jobs/([\w.-]+)/file/(.+)$", route)
+        if m:
+            root = JOBS_DIR / m.group(1)
+            target = under(root, m.group(2))
+            if target is None or not target.is_file():
+                return self._send(404, b"not found", "text/plain")
+            return self._file(target)
+
+        if route.startswith("/static/"):
+            target = under(STATIC, route[len("/static/"):])
+            if target is None or not target.is_file():
+                return self._send(404, b"not found", "text/plain")
+            return self._file(target)
+
+        return self._send(404, b"not found", "text/plain")
+
+    def _file_or_404(self, path: Path, extra=()):
+        if not path.is_file():
+            return self._send(404, b"static/index.html missing", "text/plain")
+        body = path.read_bytes()
+        return self._send(200, body, "text/html; charset=utf-8", extra)
+
+    @staticmethod
+    def _from_disk(jid: str):
+        f = JOBS_DIR / jid / "screenx_summary.json"
+        if not f.exists():
+            return None
+        try:
+            s = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            return None
+        return dict(id=jid, name=s.get("source", jid), state="done", log=[],
+                    shots=s.get("per_shot", []), summary=s, error="", argv=[])
+
+    def _events(self, jid: str):
+        """
+        Server-sent events: one message per shot as it lands, then the summary.
+
+        Polls the job's own lists rather than holding the render thread, so a
+        client that disconnects mid-render costs nothing.
+        """
+        job = JOBS.get(jid)
+        if job is None:
+            return self._send(404, b"no such job", "text/plain")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        sent_shots, sent_log = 0, 0
+        try:
+            while True:
+                while sent_shots < len(job["shots"]):
+                    rec = job["shots"][sent_shots]
+                    sent_shots += 1
+                    self._write(b"event: shot\ndata: "
+                                + json.dumps(rec, default=str).encode() + b"\n\n")
+                while sent_log < len(job["log"]):
+                    line = job["log"][sent_log]
+                    sent_log += 1
+                    self._write(b"event: log\ndata: "
+                                + json.dumps(line).encode() + b"\n\n")
+                if job["state"] in ("done", "error"):
+                    payload = dict(state=job["state"], error=job["error"],
+                                   summary=job.get("summary"))
+                    self._write(b"event: end\ndata: "
+                                + json.dumps(payload, default=str).encode() + b"\n\n")
+                    return
+                self._write(b": keepalive\n\n")
+                time.sleep(0.4)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def do_POST(self):
+        route = urlparse(self.path).path
+        if not self._allowed():
+            return self._send(403, b"forbidden", "text/plain")
+
+        if route == "/api/jobs":
+            return self._create_job()
+
+        for pattern, method in (
+                (r"^/api/jobs/([\w.-]+)/notes$", self._add_note),
+                (r"^/api/jobs/([\w.-]+)/attach$", self._attach),
+                (r"^/api/jobs/([\w.-]+)/start$", self._start),
+                (r"^/api/jobs/([\w.-]+)/analyse$", self._analyse)):
+            m = re.match(pattern, route)
+            if m:
+                return method(m.group(1))
+
+        return self._send(404, b"not found", "text/plain")
+
+    def do_DELETE(self):
+        if not self._allowed():
+            return self._send(403, b"forbidden", "text/plain")
+        m = re.match(r"^/api/jobs/([\w.-]+)$", urlparse(self.path).path)
+        if m:
+            return self._delete(m.group(1))
+        return self._send(404, b"not found", "text/plain")
+
+    def _create_job(self):
+        q = parse_qs(urlparse(self.path).query)
+        name = safe_name(q.get("name", [""])[0])
+        if not name:
+            return self._json({"error": "unsupported file type"}, 400)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_BYTES:
+            return self._json({"error": "bad content length"}, 400)
+
+        job = new_job(name)
+        outdir = Path(job["dir"])
+        outdir.mkdir(parents=True, exist_ok=True)
+        clip = outdir / name
+        self._recv_to(clip, length)
+        job["clip"] = str(clip)
+        # staged, not started: the operator may still attach another cut, a
+        # second setup, or context files, and each of those changes the run
+        return self._json({"id": job["id"], "state": job["state"]})
+
+    def _recv_to(self, path: Path, length: int):
+        left = length
+        with open(path, "wb") as fh:
+            while left > 0:
+                buf = self.rfile.read(min(CHUNK, left))
+                if not buf:
+                    break
+                fh.write(buf)
+                left -= len(buf)
+
+    def _attach(self, jid: str):
+        """
+        A file that rides along with the clip.
+
+        other_cut -> DONATED, also -> RETRIEVED, context -> DIRECTED. Three
+        different claims about where pixels may come from, so they stay three
+        kinds rather than one "extra files" bucket.
+        """
+        job = JOBS.get(jid)
+        if job is None or job["state"] != "staged":
+            return self._json({"error": "no staged job"}, 404)
+        q = parse_qs(urlparse(self.path).query)
+        kind = q.get("kind", [""])[0]
+        if kind not in ("other_cut", "also", "context"):
+            return self._json({"error": "unknown attachment kind"}, 400)
+
+        raw = q.get("name", [""])[0]
+        name = context_name(raw) if kind == "context" else safe_name(raw)
+        if not name:
+            return self._json({"error": "unsupported file type"}, 400)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_BYTES:
+            return self._json({"error": "bad content length"}, 400)
+
+        dest = Path(job["dir"]) / "attached" / kind
+        dest.mkdir(parents=True, exist_ok=True)
+        self._recv_to(dest / name, length)
+        job["attachments"].setdefault(kind, []).append(str(dest / name))
+        return self._json({"ok": True, "kind": kind, "name": name,
+                           "attachments": job["attachments"]})
+
+    def _start(self, jid: str):
+        job = JOBS.get(jid)
+        if job is None:
+            return self._json({"error": "no such job"}, 404)
+        if job["state"] not in ("staged", "error", "done"):
+            return self._json({"error": "job is " + job["state"]}, 409)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            opts = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            return self._json({"error": "bad json"}, 400)
+        opts = dict(opts)
+        opts.update(job["attachments"])          # the files, not the form
+        job["state"] = "queued"
+        job["shots"], job["log"], job["error"] = [], [], ""
+        threading.Thread(target=run_job, args=(job, Path(job["clip"]), opts),
+                         daemon=True).start()
+        return self._json({"ok": True, "id": jid})
+
+    def _analyse(self, jid: str):
+        """
+        Shot detection before committing to a render.
+
+        The cheap pass: where the cuts are, how each shot moves, how far the
+        camera travels. Displacement is the number worth reading -- across every
+        clip measured it tracked effective coverage -- so a film of locked-off
+        shots can be recognised as a poor candidate in seconds instead of after
+        a full render.
+        """
+        job = JOBS.get(jid)
+        if job is None or not job.get("clip"):
+            return self._json({"error": "no such job"}, 404)
+        try:
+            import cv2
+            import shotdetect as sd
+            import wingcoverage as wc
+            path = job["clip"]
+            seg = sd.segment(path)
+            shots = [t for t in seg["shots"] if t[1] - t[0] >= 12]
+            cap = cv2.VideoCapture(path)
+            fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+            tracker = wc.Tracker()
+            out = []
+            for si, (a, b) in enumerate(shots[:40]):
+                frames = read_span(cap, seg["crop"], a, b, 320, 8)
+                if len(frames) >= 2:
+                    kind, stats = wc.classify_motion(tracker, frames)
+                else:
+                    kind, stats = "LOCKED", {}
+                out.append(dict(shot=si, start=a, frames=b - a,
+                                seconds=round((b - a) / fps, 2), motion=kind,
+                                displacement=stats.get("displacement", 0.0)))
+            cap.release()
+            job["analysis"] = dict(crop=list(seg["crop"]), fps=round(fps, 2),
+                                   shots=out, total=len(shots))
+        except Exception as e:
+            return self._json({"error": type(e).__name__ + ": " + str(e)}, 500)
+        return self._json(job["analysis"])
+
+    def _files(self, jid: str):
+        d = JOBS_DIR / jid
+        if not d.is_dir():
+            return self._json({"error": "no such job"}, 404)
+        out = [dict(name=f.relative_to(d).as_posix(), bytes=f.stat().st_size)
+               for f in sorted(d.rglob("*")) if f.is_file()]
+        return self._json(out)
+
+    def _delete(self, jid: str):
+        d = JOBS_DIR / jid
+        if under(JOBS_DIR, jid) is None or not d.is_dir():
+            return self._json({"error": "no such job"}, 404)
+        shutil.rmtree(d, ignore_errors=True)
+        JOBS.pop(jid, None)
+        return self._json({"ok": True})
+
+    def _add_note(self, jid: str):
+        """
+        A human pinning what belongs off-frame in one shot.
+
+        context.DirectionStore has always persisted these and screenx_render
+        reads them on every run -- there has simply never been a way to write
+        one. Pixels driven by a note are labelled DIRECTED, which is outside
+        PHOTOGRAPHIC: someone who knows the place is still not a camera.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            return self._json({"error": "bad json"}, 400)
+        shot, text = body.get("shot"), (body.get("text") or "").strip()
+        if shot is None or not text:
+            return self._json({"error": "shot and text required"}, 400)
+        try:
+            import context as cx
+            store = cx.DirectionStore(Path(JOBS_DIR / jid))
+            store.add(int(shot), text, body.get("author") or "operator")
+            store.save()
+        except Exception as e:
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        return self._json({"ok": True})
+
+
+# ------------------------------------------------------------------ main
+
+def lan_addresses():
+    out = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        out.append(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    return out
+
+
+def main():
+    global TOKEN
+    ap = argparse.ArgumentParser(description="ScreenX Studio")
+    ap.add_argument("-p", "--port", type=int, default=8420)
+    ap.add_argument("--host", default=None)
+    ap.add_argument("--local", action="store_true", help="bind 127.0.0.1 only")
+    ap.add_argument("--token", default="", help="require ?t=TOKEN once")
+    ap.add_argument("--no-open", action="store_true")
+    a = ap.parse_args()
+
+    TOKEN = a.token
+    JOBS_DIR.mkdir(exist_ok=True)
+    host = a.host or ("127.0.0.1" if a.local else "0.0.0.0")
+    srv = ThreadingHTTPServer((host, a.port), Handler)
+
+    url = f"http://localhost:{a.port}/" + (f"?t={TOKEN}" if TOKEN else "")
+    print(f"ScreenX Studio on {url}")
+    if host == "0.0.0.0":
+        for ip in lan_addresses():
+            print(f"  on this network: http://{ip}:{a.port}/"
+                  + (f"?t={TOKEN}" if TOKEN else ""))
+    caps = capabilities()
+    print("  " + "  ".join(
+        f"{k}:{'yes' if v['ok'] else 'no'}" for k, v in caps.items()))
+    if not a.no_open:
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+
+
+if __name__ == "__main__":
+    main()

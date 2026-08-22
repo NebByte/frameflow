@@ -1,0 +1,23 @@
+# credentials -- an unencrypted ed25519 private key was sitting in this folder
+*.pem
+*_host_key
+*_host_key.pub
+id_ed25519*
+id_rsa*
+licences.json
+.env
+
+# job output and scratch
+jobs/
+demo_out/
+out/
+sfm/
+__pycache__/
+*.pyc
+
+# large media: the demos/ and results/ directories are curated by hand
+*.webm
+
+# local editor/agent settings
+.claude/settings.local.json
+.vscode/
