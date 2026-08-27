@@ -57,18 +57,31 @@ def start_studio():
 def build():
     from google.adk.cli.fast_api import get_fast_api_app
 
-    # logo_text is not passed: ADK requires logo_image_url alongside it and
-    # refuses to start with only one of the pair.
-    api = get_fast_api_app(agents_dir=str(HERE), web=True,
+    # agents_dir points AT the package, not at the repo that holds it.
+    #
+    # ADK decides a directory "is" a single agent if it contains agent.py --
+    # and this repo has had an agent.py since long before any of this, holding
+    # the WingAgent that plans which rung to try. Pointing at the repo root
+    # therefore made ADK adopt the root as the agent and name it after the
+    # working directory, which inside the container is /app. The deployed
+    # service listed one agent called "app" and it was the studio server.
+    #
+    # Naming the package directly puts ADK in single-agent mode with the right
+    # name, and it still adds the parent to sys.path so `import triage` works.
+    api = get_fast_api_app(agents_dir=str(HERE / "agent_service"), web=True,
                            host="0.0.0.0", port=PORT)
 
     start_studio()
     client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{STUDIO_PORT}",
                                timeout=httpx.Timeout(600.0))
 
-    @api.get("/healthz")
-    async def healthz():
-        """Cloud Run's readiness check, and a quick way to see what is wired."""
+    @api.get("/status")
+    async def status():
+        """
+        What is actually wired up. Not /healthz: Google's frontend answers
+        that path itself before it reaches the container, so the route existed
+        in the OpenAPI schema and returned Google's own 404 in production.
+        """
         import ledger
         return JSONResponse(dict(
             ok=True,
