@@ -506,10 +506,15 @@ def test_colmap_runs_headless():
     """
     import inspect
     src = inspect.getsource(sfm.build_scene)
+    # asserted on behaviour, not on one release's spelling: COLMAP 4 renamed
+    # these to FeatureExtraction/FeatureMatching, and an unknown option is fatal
+    extract_opt, match_opt = sfm.gpu_option_names("definitely-not-a-binary")
     check("feature extraction sets use_gpu explicitly",
-          "--SiftExtraction.use_gpu" in src)
+          "extract_opt" in src and extract_opt.endswith(".use_gpu"), extract_opt)
     check("matching sets use_gpu explicitly",
-          "--SiftMatching.use_gpu" in src)
+          "match_opt" in src and match_opt.endswith(".use_gpu"), match_opt)
+    check("the option name is detected rather than hardcoded",
+          "gpu_option_names" in src)
     check("the default is driven by DISPLAY, not assumed",
           "DISPLAY" in src)
     check("build_scene exposes an override", "gpu_sift" in
@@ -748,6 +753,62 @@ def test_summary_reports_which_rungs_fired():
           f"photo {rep['photographic']} real {rep['real_same_camera']}")
 
 
+
+def test_same_take_checks_the_pixels():
+    """
+    Inliers say a homography exists. They do not say it is the same take.
+
+    Measured on aerial footage of a park, where a plane fits two views of the
+    same flat ground: 70, 84 and 71 inliers with 40.3, 31.3 and 34.8 mean
+    absolute difference after warping -- three different moments, all accepted
+    on inlier count alone. DONATED is inside REAL_LEVELS, so each one reported
+    invented periphery as photographed.
+    """
+    print("a shared take has to survive a look at the pixels")
+    rs = np.random.RandomState(4)
+    a = rs.randint(0, 255, (60, 80, 3), dtype=np.uint8)
+    same = a.copy()
+    other = rs.randint(0, 255, (60, 80, 3), dtype=np.uint8)
+    H = np.eye(3)
+
+    tool = ag.SameTakeTool()
+    ok, diff = tool.agrees([a], [same], H, 0, 0)
+    check("identical content agrees", ok and diff < 1.0, f"{diff:.1f}")
+
+    ok, diff = tool.agrees([a], [other], H, 0, 0)
+    check("different content is refused however it registered",
+          not ok and diff > 18.0, f"{diff:.1f}")
+
+    shifted = np.roll(a, 3, axis=1).astype(np.int16)
+    noisy = np.clip(a.astype(np.int16) + rs.randint(-8, 9, a.shape), 0, 255).astype(np.uint8)
+    ok, diff = tool.agrees([a], [noisy], H, 0, 0)
+    check("grading and compression noise still agree", ok, f"{diff:.1f}")
+
+    check("a singular homography is refused, not raised",
+          tool.agrees([a], [same], np.zeros((3, 3)), 0, 0)[0] is False)
+    check("no homography at all is refused",
+          tool.agrees([a], [same], None, 0, 0)[0] is False)
+    check("the bar sits between the measured clusters",
+          12.7 < ag.SameTakeTool.MAX_DISAGREEMENT < 31.3,
+          str(ag.SameTakeTool.MAX_DISAGREEMENT))
+
+
+def test_colmap_option_names():
+    """
+    COLMAP 4 renamed the switch the headless fix depends on, and an unknown
+    option is fatal rather than ignored -- surfacing as `colmap features
+    failed`, which is also what a missing display produces.
+    """
+    print("\nthe colmap option names are detected, not assumed")
+    check("3.x names are the fallback",
+          sfm.gpu_option_names("definitely-not-a-binary")
+          == ("--SiftExtraction.use_gpu", "--SiftMatching.use_gpu"))
+    extract, match = sfm.gpu_option_names("definitely-not-a-binary")
+    check("extraction and matching are asked for separately", extract != match)
+    check("a missing binary is a fallback, not a crash",
+          isinstance(sfm.gpu_option_names("definitely-not-a-binary"), tuple))
+
+
 if __name__ == "__main__":
     print("Tier 2 -- scene layer, dispatch, refusals")
     test_write_images()
@@ -768,6 +829,8 @@ if __name__ == "__main__":
     test_action_gain_reporting()
     test_external_reference_rung()
     test_summary_reports_which_rungs_fired()
+    test_same_take_checks_the_pixels()
+    test_colmap_option_names()
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:

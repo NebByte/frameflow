@@ -21,3 +21,12 @@ __pycache__/
 # local editor/agent settings
 .claude/settings.local.json
 .vscode/
+
+# Generated ground truth for validate.py. Regenerate with:
+#     python make_test_clip.py
+# The panorama is 3MB and derivable in seconds, so it does not belong in git;
+# the clips cut from it do, because the demo and the tests need them.
+media/pano_flat.png
+
+# Personal source footage. Synthetic clips are enough to run everything.
+media/gym_pan.mp4

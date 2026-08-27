@@ -45,10 +45,16 @@ HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 JOBS_DIR = HERE / "jobs"
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+GENERATORS = ("mirror", "inpaint", "diffusion", "hosted", "wavespeed", "gemini-edit")
 MAX_BYTES = 4 << 30
 CHUNK = 1 << 16
 
 JOBS: dict[str, dict] = {}
+# Keys the operator pasted for this session. Held in memory and passed to the
+# render subprocess; never written to disk, never returned by any route, and
+# gone when the server stops. A hosted generator needs a credential and the repo
+# is not the place to keep one.
+KEYS: dict[str, str] = {}
 LOCK = threading.Lock()
 SLOT = threading.Semaphore(1)      # the pipeline is CPU-bound: one clip at a time
 TOKEN = ""
@@ -92,10 +98,21 @@ def capabilities() -> dict:
                           reason="" if _has("ffmpeg") else "ffmpeg not on PATH",
                           enables=["web_encode"])
 
-    ws = bool(os.environ.get("WAVESPEED_API_KEY") or os.environ.get("SCREENX_TOKEN"))
+    ws = bool(KEYS.get("WAVESPEED_API_KEY") or os.environ.get("WAVESPEED_API_KEY")
+              or os.environ.get("SCREENX_TOKEN"))
     caps["wavespeed"] = dict(ok=ws, label="WaveSpeed outpainter",
-                             reason="" if ws else "WAVESPEED_API_KEY not set",
-                             enables=["wings_on_dark:wavespeed"])
+                             reason="" if ws else "paste a key below, or set "
+                                                  "WAVESPEED_API_KEY",
+                             enables=["wings_on_dark:wavespeed"],
+                             wants_key="WAVESPEED_API_KEY")
+
+    try:
+        import colabrun
+        cb = colabrun.available()
+    except Exception as e:
+        cb = dict(ok=False, reason=f"{type(e).__name__}")
+    caps["colab"] = dict(ok=bool(cb["ok"]), label="Colab runtime (remote GPU)",
+                         reason=cb.get("reason", ""), enables=["remote"])
 
     gem, why = False, "no credential"
     try:
@@ -199,7 +216,6 @@ def clamp(opts: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
-    gens = ("mirror", "inpaint", "diffusion", "hosted", "wavespeed", "gemini-edit")
     dark = opts.get("wings_on_dark") or None
     return dict(
         maxw=num("maxw", 160, 1920, 640),
@@ -207,7 +223,7 @@ def clamp(opts: dict) -> dict:
         max_shots=num("max_shots", 0, 999, 0),
         rotate=int(opts.get("rotate", 0)) if int(opts.get("rotate", 0) or 0)
         in (0, 90, 180, 270) else 0,
-        wings_on_dark=dark if dark in gens else None,
+        wings_on_dark=dark if dark in GENERATORS else None,
         sources=bool(opts.get("sources")),
         prefer_3d=bool(opts.get("prefer_3d")),
         sfm=bool(opts.get("sfm")),
@@ -215,6 +231,9 @@ def clamp(opts: dict) -> dict:
         vision=bool(opts.get("vision")),
         online=bool(opts.get("online")),
         library=(opts.get("library") or None),
+        # the extended film is the product; the report is about it. Written
+        # unless the caller explicitly asks not to.
+        deliver=(opts.get("deliver", "1") not in ("", "0", False, None)),
         **{k: rng(k, lo, hi) for k, lo, hi in (
             ("wing", 0.05, 0.60),
             ("screen_width", 3.0, 40.0), ("screen_height", 2.0, 25.0),
@@ -258,6 +277,8 @@ def build_argv(clip: Path, outdir: Path, opts: dict) -> list:
         argv += ["--online"]
     if o["library"]:
         argv += ["--library", str(o["library"])]
+    if o["deliver"]:
+        argv += ["--deliver", "deliverable"]
 
     # geometry and gate: reachable in code since the beginning and never from a
     # command line, so in practice the wing width and the bar were constants
@@ -293,8 +314,119 @@ def new_job(name: str) -> dict:
     return job
 
 
+def run_remote(job: dict, clip: Path, opts: dict):
+    """
+    Run this job on a Colab runtime instead of here.
+
+    The reason to bother is narrow and real: the gaussian backend, the RETRIEVED
+    rung and the diffusion generator all need CUDA, and no amount of patience on
+    a laptop substitutes. Everything else is faster locally once the upload is
+    counted.
+
+    An accelerator is not assumed. Colab hands out CPU runtimes while refusing
+    GPUs to an account over quota, so if a GPU was asked for and a CPU arrived,
+    that is reported and the 3D flags are dropped rather than being sent to a
+    machine that cannot honour them -- a 3D run silently served by the CPU path
+    would look like a result and prove nothing.
+    """
+    import colabrun as cr
+    outdir = Path(job["dir"])
+    scratch = outdir / "remote"
+    log = job["log"].append
+
+    log("allocating a Colab runtime...")
+    got = cr.allocate("T4")
+    if not got["ok"]:
+        job["state"], job["error"] = "error", f"no runtime: {got['note']}"
+        return
+    job["accelerator"] = got["accelerator"]
+    if got["note"]:
+        log(got["note"])
+    log(f"runtime: {got['accelerator']}")
+
+    wants_gpu = bool(opts.get("prefer_3d") or opts.get("sfm"))
+    if wants_gpu and got["accelerator"] == "CPU":
+        opts = dict(opts, prefer_3d=False, sfm=False)
+        log("3D flags dropped: this runtime has no GPU, and running the CPU "
+            "path under a 3D label would prove nothing")
+
+    log("uploading toolkit and clip...")
+    cr.upload(cr.toolkit_zip(scratch / "tk.zip"), "/content/tk.zip")
+    cr.upload(clip, f"/content/{clip.name}")
+
+    code, out = cr.exec_file(cr.script(cr.SETUP % dict(need_gpu=wants_gpu),
+                                       scratch, "setup.py"), timeout=1800)
+    for line in (out or "").splitlines()[-8:]:
+        log(line)
+    if "READY" not in (out or ""):
+        job["state"], job["error"] = "error", "remote setup failed"
+        return
+
+    # the same argv the local runner builds, minus the paths it owns
+    argv = build_argv(clip, outdir, opts)
+    flags = []
+    skip = {"-o", str(outdir), str(clip)}
+    it = iter(argv[4:])
+    for a in it:
+        if a == "-o":
+            next(it, None)
+            continue
+        flags.append(a)
+    job["argv"] = argv
+    cr.exec_file(cr.script(cr.LAUNCH % dict(clip=clip.name, flags=" ".join(flags)),
+                           scratch, "launch.py"), timeout=300)
+
+    poll = cr.script(cr.POLL, scratch, "poll.py")
+    seen = 0
+    for _ in range(180):
+        time.sleep(10)
+        code, out = cr.exec_file(poll, timeout=200)
+        for rec in cr.parse_shots(out or "")[seen:]:
+            job["shots"].append(rec)
+            seen += 1
+        if "@@IDLE" in (out or ""):
+            break
+
+    log("downloading results...")
+    ok = False
+    for remote, local in ((f"/content/out/screenx_summary.json",
+                           outdir / "screenx_summary.json"),
+                          ("/content/out/screenx_demo.mp4", outdir / "screenx_demo.mp4"),
+                          ("/content/out/deliverable/master_widened.mp4",
+                           outdir / "deliverable" / "master_widened.mp4"),
+                          ("/content/out/deliverable/left.mp4",
+                           outdir / "deliverable" / "left.mp4"),
+                          ("/content/out/deliverable/centre.mp4",
+                           outdir / "deliverable" / "centre.mp4"),
+                          ("/content/out/deliverable/right.mp4",
+                           outdir / "deliverable" / "right.mp4")):
+        c, _o = cr.download(remote, Path(local))
+        ok = ok or (c == 0 and Path(local).exists())
+
+    summary = outdir / "screenx_summary.json"
+    if summary.exists():
+        try:
+            job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
+            job["state"] = "done"
+        except ValueError as e:
+            job["state"], job["error"] = "error", f"summary unreadable: {e}"
+    else:
+        job["state"], job["error"] = "error", "remote run produced no summary"
+    cr.stop()
+    log("runtime released")
+
+
 def run_job(job: dict, clip: Path, opts: dict):
     """Drive one render to completion. Runs on its own thread."""
+    if opts.get("remote"):
+        with SLOT:
+            job["state"] = "running"
+            try:
+                return run_remote(job, clip, opts)
+            except Exception as e:
+                job["state"] = "error"
+                job["error"] = f"{type(e).__name__}: {e}"
+                return
     outdir = Path(job["dir"])
     argv = build_argv(clip, outdir, opts)
     job["argv"] = argv
@@ -302,9 +434,10 @@ def run_job(job: dict, clip: Path, opts: dict):
         job["state"] = "running"
         job["started"] = time.time()
         try:
+            env = {**os.environ, **KEYS}      # session keys, never persisted
             proc = subprocess.Popen(argv, cwd=str(HERE), stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True,
-                                    bufsize=1)
+                                    bufsize=1, env=env)
             for line in proc.stdout:
                 line = line.rstrip()
                 if line.startswith("@@SHOT "):
@@ -331,6 +464,80 @@ def run_job(job: dict, clip: Path, opts: dict):
             job["state"] = "error"
             job["error"] = job["error"] or (
                 "no shots rendered" if code else "render produced no summary")
+
+
+def run_polish(job: dict, repair: str | None, shots: str = "",
+               settle: bool = True, full: bool = False):
+    """
+    The finishing pass over a film that is already rendered. Own thread.
+
+    A subprocess for the same reason a render is one: `polish.py` stays the
+    single implementation of what inspection and repair mean, so the browser
+    cannot drift from the terminal, and a vision call that hangs or a generator
+    that dies takes a subprocess with it rather than the server.
+
+    Repair rewrites the run's summary -- that is the whole point of it, since
+    repainted pixels stop counting as photographed -- so the fresh summary is
+    read back here. A report screen still showing the pre-polish real-wing
+    figure would be reporting pixels as filmed that a model drew a minute ago.
+    """
+    d = Path(job["dir"])
+    argv = [sys.executable, str(HERE / "polish.py"), str(d)]
+    # The settle pass runs unless it is explicitly waived. It is free, calls
+    # nothing hosted, invents no pixel and cannot move the real-wing figure --
+    # so there is no version of "finish this film" where skipping it by default
+    # is the right guess.
+    if settle is False:
+        argv += ["--no-settle"]
+    if repair:
+        argv += ["--repair", repair]
+        if full:
+            argv += ["--full"]
+        if shots:
+            argv += ["--shots", shots]
+    p = job["polish"] = dict(state="running", repairing=bool(repair),
+                             settling=settle is not False, log=[],
+                             report=None, repaired=[], settled=[], error="",
+                             argv=argv)
+    code = 0
+    with SLOT:
+        try:
+            env = {**os.environ, **KEYS}      # session keys, never persisted
+            proc = subprocess.Popen(argv, cwd=str(HERE), stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True,
+                                    bufsize=1, env=env)
+            for line in proc.stdout:
+                p["log"].append(line.rstrip())
+                del p["log"][:-200]
+            code = proc.wait()
+        except Exception as e:
+            p["state"], p["error"] = "error", f"{type(e).__name__}: {e}"
+            return
+
+    report = d / "polish_report.json"
+    if report.exists():
+        try:
+            p["report"] = json.loads(report.read_text(encoding="utf-8"))
+            p["repaired"] = p["report"].get("repaired") or []
+            p["settled"] = p["report"].get("settled") or []
+        except ValueError as e:
+            p["error"] = f"report unreadable: {e}"
+
+    # A settle re-cuts the deliverable too, so the players must be pointed at
+    # the new files even though no number changed.
+    if p["repaired"] or p["settled"]:
+        summary = d / "screenx_summary.json"
+        try:
+            job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
+            job["shots"] = job["summary"].get("per_shot", job.get("shots") or [])
+        except (OSError, ValueError) as e:
+            p["error"] = p["error"] or f"restated summary unreadable: {e}"
+
+    if code and not p["report"]:
+        p["state"] = "error"
+        p["error"] = p["error"] or f"polish exited {code}"
+    else:
+        p["state"] = "done"
 
 
 def known_jobs() -> list:
@@ -363,9 +570,14 @@ class Handler(BaseHTTPRequestHandler):
     # -- plumbing
 
     def _write(self, buf: bytes):
+        # A client that closes mid-download is ordinary -- a browser seeking in
+        # a video does it on every scrub. Windows reports that as
+        # ConnectionAbortedError (WinError 10053) rather than BrokenPipe, which
+        # was not in this tuple, so the server printed a traceback for routine
+        # behaviour. Noise in a log is not free: it is what a real error hides in.
         try:
             self.wfile.write(buf)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             raise
 
     def _send(self, code, body: bytes, ctype="application/json", extra=()):
@@ -461,6 +673,10 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             return self._files(m.group(1))
 
+        m = re.match(r"^/api/jobs/([\w.-]+)/polish$", route)
+        if m:
+            return self._polish_state(m.group(1))
+
         m = re.match(r"^/api/jobs/([\w.-]+)/file/(.+)$", route)
         if m:
             root = JOBS_DIR / m.group(1)
@@ -485,15 +701,30 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _from_disk(jid: str):
-        f = JOBS_DIR / jid / "screenx_summary.json"
+        """
+        Rehydrate a finished job from what it left on disk.
+
+        The shape has to match `new_job`'s exactly, because a caller is entitled
+        to put this back into JOBS -- polish does, so that a pass started on a
+        job the server has never seen can be polled. A record missing a key that
+        `known_jobs` reads takes the whole job list down for the life of the
+        process, and it does it the moment someone polishes rather than at the
+        point the record was built.
+        """
+        d = JOBS_DIR / jid
+        f = d / "screenx_summary.json"
         if not f.exists():
             return None
         try:
             s = json.loads(f.read_text(encoding="utf-8"))
         except ValueError:
             return None
-        return dict(id=jid, name=s.get("source", jid), state="done", log=[],
-                    shots=s.get("per_shot", []), summary=s, error="", argv=[])
+        clip = next((str(p) for p in sorted(d.glob("*"))
+                     if p.suffix.lower() in VIDEO_EXT), "")
+        return dict(id=jid, name=s.get("source", jid), state="done",
+                    started=d.stat().st_mtime, dir=str(d), log=[],
+                    shots=s.get("per_shot", []), summary=s, error="", argv=[],
+                    clip=clip, attachments={}, analysis=None)
 
     def _events(self, jid: str):
         """
@@ -542,11 +773,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/jobs":
             return self._create_job()
 
+        if route == "/api/keys":
+            return self._set_keys()
+
         for pattern, method in (
                 (r"^/api/jobs/([\w.-]+)/notes$", self._add_note),
                 (r"^/api/jobs/([\w.-]+)/attach$", self._attach),
                 (r"^/api/jobs/([\w.-]+)/start$", self._start),
-                (r"^/api/jobs/([\w.-]+)/analyse$", self._analyse)):
+                (r"^/api/jobs/([\w.-]+)/analyse$", self._analyse),
+                (r"^/api/jobs/([\w.-]+)/polish$", self._polish)):
             m = re.match(pattern, route)
             if m:
                 return method(m.group(1))
@@ -642,6 +877,11 @@ class Handler(BaseHTTPRequestHandler):
         opts.update(job["attachments"])          # the files, not the form
         job["state"] = "queued"
         job["shots"], job["log"], job["error"] = [], [], ""
+        # a finding describes the walls of the render that produced it. Re-render
+        # and those walls are gone, so keeping the report would leave the report
+        # screen faulting pixels that no longer exist.
+        job.pop("polish", None)
+        (JOBS_DIR / jid / "polish_report.json").unlink(missing_ok=True)
         threading.Thread(target=run_job, args=(job, Path(job["clip"]), opts),
                          daemon=True).start()
         return self._json({"ok": True, "id": jid})
@@ -686,6 +926,82 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": type(e).__name__ + ": " + str(e)}, 500)
         return self._json(job["analysis"])
 
+    def _polish(self, jid: str):
+        """
+        Look at the finished walls, and optionally repaint what a model faults.
+
+        A render decides what can be earned; nothing in it asks whether the
+        result looks good, because coverage and staleness are statistics over
+        pixels and neither notices a wall that is one column smeared forty
+        times. This is the pass that asks.
+
+        Repair is NOT refused on photographed wings. A streaked recovered wall
+        is a real defect and a maker should be able to fix it -- so what it
+        costs is stated instead of forbidden: every pixel the model changes is
+        relabelled GENERATED, or DIRECTED where a pinned note drove it, and the
+        run's real-wing figure falls by exactly the repainted share. The film
+        gets better, the number stays true, and the report carries both.
+        """
+        job = JOBS.get(jid) or self._from_disk(jid)
+        if job is None:
+            return self._json({"error": "no such job"}, 404)
+        job.setdefault("dir", str(JOBS_DIR / jid))
+        JOBS.setdefault(jid, job)
+        if job.get("state") == "running":
+            return self._json({"error": "job is still rendering"}, 409)
+        if (job.get("polish") or {}).get("state") == "running":
+            return self._json({"error": "already polishing"}, 409)
+        if not (JOBS_DIR / jid / "screenx_summary.json").exists():
+            return self._json({"error": "nothing to polish yet — convert first"}, 409)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            return self._json({"error": "bad json"}, 400)
+
+        repair = body.get("repair") or None
+        if repair is True:
+            repair = "wavespeed"
+        if repair and repair not in GENERATORS:
+            return self._json({"error": f"unknown generator {repair}"}, 400)
+
+        # Which shots to pay for. A hosted generator bills per shot, and a
+        # fast-cut trailer refuses most of them -- 34 shots at $0.20 is $7 spent
+        # on one-second fragments. Empty means every faulted shot, as before.
+        raw = body.get("shots")
+        if isinstance(raw, list):
+            raw = ",".join(str(s) for s in raw)
+        shots = re.sub(r"[^\d,]", "", str(raw or ""))
+        # settle defaults ON; only an explicit false turns it off
+        settle = body.get("settle") is not False
+        full = bool(body.get("full"))
+        threading.Thread(target=run_polish, args=(job, repair, shots, settle, full),
+                         daemon=True).start()
+        return self._json({"ok": True, "repairing": bool(repair),
+                           "settling": settle,
+                           "shots": shots or "all faulted"})
+
+    def _polish_state(self, jid: str):
+        """
+        Whatever the last pass found. Falls back to the report on disk so a
+        server restart does not lose a finished inspection.
+        """
+        job = JOBS.get(jid)
+        p = (job or {}).get("polish")
+        if p:
+            return self._json(p)
+        f = JOBS_DIR / jid / "polish_report.json"
+        if not f.exists():
+            return self._json(dict(state="none", report=None, log=[],
+                                   repaired=[], error="", repairing=False))
+        try:
+            report = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError as e:
+            return self._json({"error": f"report unreadable: {e}"}, 500)
+        return self._json(dict(state="done", report=report, log=[],
+                               repaired=report.get("repaired") or [],
+                               error="", repairing=False))
+
     def _files(self, jid: str):
         d = JOBS_DIR / jid
         if not d.is_dir():
@@ -701,6 +1017,32 @@ class Handler(BaseHTTPRequestHandler):
         shutil.rmtree(d, ignore_errors=True)
         JOBS.pop(jid, None)
         return self._json({"ok": True})
+
+    def _set_keys(self):
+        """
+        Accept credentials for this session only.
+
+        Held in memory, handed to the render subprocess, never written to disk
+        and never read back out: the response says which names are set, not what
+        they are. A key that reaches a file ends up in a backup, a zip or a
+        repository, and this one bills a card.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            return self._json({"error": "bad json"}, 400)
+        allowed = {"WAVESPEED_API_KEY", "GEMINI_API_KEY", "SCREENX_ENDPOINT",
+                   "SCREENX_TOKEN"}
+        for name, value in (body or {}).items():
+            if name not in allowed:
+                return self._json({"error": f"unknown credential {name}"}, 400)
+            value = (value or "").strip()
+            if value:
+                KEYS[name] = value
+            else:
+                KEYS.pop(name, None)
+        return self._json({"set": sorted(KEYS)})
 
     def _add_note(self, jid: str):
         """

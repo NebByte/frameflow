@@ -164,9 +164,10 @@ def leave_one_out(frames, backend, tracker=None, probes=6, margin=0.18):
             if filled.mean() > 0.995:
                 break
             for M in warp_of(i, j):           # far to near
-                warped = cv2.warpPerspective(frames[j], M, (w, h))
-                wm = cv2.warpPerspective(np.full((h, w), 255, np.uint8), M,
-                                         (w, h), flags=cv2.INTER_NEAREST) > 128
+                # the renderer's own warp, so the score measures the geometry
+                # behind the pixels that actually ship rather than a variant
+                # with a black fringe down every donor edge
+                warped, wm = wc.warp_with_mask(frames[j], M, (w, h))
                 new = wm & ~filled
                 if not new.any():
                     continue

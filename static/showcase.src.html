@@ -155,7 +155,7 @@ pre b { color: var(--ink); font-weight: 400; }
     <span><b>Measured</b> 22 August 2026</span>
     <span><b>Footage</b> handheld, phone, unstaged</span>
     <span><b>Compute</b> laptop CPU + one Colab T4</span>
-    <span><b>Suite</b> 413 assertions</span>
+    <span><b>Suite</b> 442 assertions</span>
   </dl>
 </header>
 
@@ -168,7 +168,7 @@ pre b { color: var(--ink); font-weight: 400; }
   <div class="readouts">
     <div class="readout">
       <div class="k">Real wing pixels</div>
-      <div class="v real">98.7%</div>
+      <div class="v real">99.0%</div>
       <div class="n">photographed, both wings</div>
     </div>
     <div class="readout">
@@ -178,13 +178,13 @@ pre b { color: var(--ink); font-weight: 400; }
     </div>
     <div class="readout">
       <div class="k">Geometry</div>
-      <div class="v">23.5<em> dB</em></div>
+      <div class="v">30.3<em> dB</em></div>
       <div class="n">gate refuses below 20</div>
     </div>
     <div class="readout">
       <div class="k">Effective coverage</div>
-      <div class="v">54.3%</div>
-      <div class="n">staleness and detail weighted</div>
+      <div class="v">65.9%</div>
+      <div class="n">staleness and detail weighted &mdash; FULL</div>
     </div>
     <div class="readout">
       <div class="k">Wall depth</div>
@@ -272,6 +272,18 @@ pre b { color: var(--ink); font-weight: 400; }
   </div>
 
   <div class="callout">
+    <p><strong>A rung was reporting invented pixels as photographed.</strong>
+    DONATED accepted a donor on homography inliers alone. On aerial footage of a
+    park — near-planar and self-similar, the worst case for that test — three of
+    five accepted matches were different moments entirely: 70, 84 and 71 inliers,
+    but 40.3, 31.3 and 34.8 mean absolute difference once warped back.</p>
+    <p>Inliers establish "consistent with one homography", never "the same take".
+    The tool now warps the donor and looks at the pixels. On the drone clip that
+    cut DONATED from 81.5% to 36.9%; on the apartment walk it left 8.4% exactly
+    where it was. It removes the false cluster and leaves real matches alone.</p>
+  </div>
+
+  <div class="callout">
     <p><strong>The refusal that mattered most was structural.</strong> On the drone
     footage the 3D path returned poses it could not vouch for, and the backend
     raised rather than rendered. That exception escaped and killed the whole run —
@@ -280,6 +292,29 @@ pre b { color: var(--ink); font-weight: 400; }
     film carries on. Six assertions hold it in place, including that nothing outside
     the frame gets labelled real on a shot that was refused.</p>
   </div>
+</section>
+
+<section>
+  <h2>A claim this tool withdrew</h2>
+  <p>DONATED &mdash; one cut of a film donating real periphery to another &mdash; was
+  reported at 8.4% on an apartment walk. It was wrong, and the way it was wrong is
+  worth more than the number was.</p>
+  <p>Shot detection had split a single continuous 53.8-second take into five. The
+  matcher then found one part of that take against another part of the same take,
+  verified it geometrically, and labelled the pixels DONATED. They were real
+  pixels. They were on the wrong rung: same camera, same run, no second cut
+  involved.</p>
+  <pre>1509 frames, consecutive-frame difference
+  median <b>13.5</b>   p95 <b>25.6</b>   p99 <b>31.6</b>   max <b>36.0</b>
+  frames above 40: <b>0</b>          <- a real cut is far above p99
+
+the four detected boundaries ranked
+  <b>77th</b>, <b>112th</b>, <b>139th</b> and <b>555th</b> of 1508</pre>
+  <p>There were no cuts in that clip at all. A candidate cut is now confirmed by
+  looking for correspondence across it: a real cut lands on unrelated pixels and
+  almost nothing matches, while a fast pan is the same room from a slightly
+  different angle. On a cut trailer it keeps <em>76 of 78</em> boundaries; on the
+  walk it removed three of four.</p>
 </section>
 
 <section>
@@ -293,9 +328,9 @@ pre b { color: var(--ink); font-weight: 400; }
     <div class="rung photo"><span class="i">1</span><span class="name">RECOVERED</span>
       <span class="what">This shot's own periphery, seen earlier in the same take</span><span class="fired yes">fired · 98.7%</span></div>
     <div class="rung photo"><span class="i">2</span><span class="name">DONATED</span>
-      <span class="what">The same take in another cut, framed wider</span><span class="fired yes">fired · 8.4%</span></div>
+      <span class="what">The same take in another cut, framed wider</span><span class="fired">retracted</span></div>
     <div class="rung photo"><span class="i">3</span><span class="name">RETRIEVED</span>
-      <span class="what">Another setup of the same location, bridged in 3D</span><span class="fired">needs COLMAP</span></div>
+      <span class="what">Another setup of the same location, bridged in 3D</span><span class="fired">6% registered</span></div>
     <div class="rung notphoto"><span class="i">4</span><span class="name">REFERENCED</span>
       <span class="what">A licensed image of the place — a camera, but not this one</span><span class="fired yes">fired · 2.3%</span></div>
     <div class="rung notphoto"><span class="i">5</span><span class="name">DIRECTED</span>
@@ -350,8 +385,9 @@ pre b { color: var(--ink); font-weight: 400; }
         <tr><td class="wrap" style="color:var(--dim)">Has every rung fired?</td>
           <td style="color:var(--accent)">Six of seven</td>
           <td class="wrap">One run of an apartment walk landed RECOVERED 65.4%, DIRECTED 23.1%,
-            DONATED 8.4%, REFERENCED 2.3%, GENERATED 0.7%. Only RETRIEVED is left, and it
-            needs COLMAP on the machine</td></tr>
+            REFERENCED 2.3%, GENERATED 0.7%. DONATED was retracted on inspection and
+            RETRIEVED needs two setups that register &mdash; measured against COLMAP
+            locally they reach 6% of an 80% bar</td></tr>
       </tbody>
     </table>
   </div>

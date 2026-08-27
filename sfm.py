@@ -178,6 +178,36 @@ def write_images(scene_dir, setups, max_frames_per_setup=None):
     return manifest
 
 
+_GPU_OPTS = {}
+
+
+def gpu_option_names(binary=None):
+    """
+    What this COLMAP calls the CPU/GPU switch.
+
+    4.x renamed SiftExtraction/SiftMatching to FeatureExtraction/
+    FeatureMatching, and an unknown option is fatal rather than ignored:
+    "Failed to parse options - unrecognised option". That surfaced as
+    `colmap features failed`, which is also what a missing display produces, so
+    a version mismatch and the headless problem were indistinguishable from the
+    log. Asked once per binary and cached.
+    """
+    binary = binary or COLMAP
+    if binary in _GPU_OPTS:
+        return _GPU_OPTS[binary]
+    pair = ("--SiftExtraction.use_gpu", "--SiftMatching.use_gpu")
+    try:
+        out = subprocess.run([binary, "feature_extractor", "-h"],
+                             capture_output=True, text=True, timeout=60)
+        text = (out.stdout or "") + (out.stderr or "")
+        if "--FeatureExtraction.use_gpu" in text:
+            pair = ("--FeatureExtraction.use_gpu", "--FeatureMatching.use_gpu")
+    except (OSError, subprocess.SubprocessError):
+        pass                                   # the run itself will report it
+    _GPU_OPTS[binary] = pair
+    return pair
+
+
 def build_scene(scene_dir, setups, scene_id="scene", max_frames_per_setup=24,
                 binary=COLMAP, single_camera_per_shot=True, verbose=True,
                 timeout=None, gpu_sift=None):
@@ -231,13 +261,15 @@ def build_scene(scene_dir, setups, scene_id="scene", max_frames_per_setup=24,
     use_gpu = (bool(os.environ.get("DISPLAY")) if gpu_sift is None else gpu_sift)
     gpu = "1" if use_gpu else "0"
 
+    extract_opt, match_opt = gpu_option_names(binary)
+
     run(["feature_extractor", "--database_path", str(db),
          "--image_path", str(d / "images"),
          "--ImageReader.single_camera", "0" if single_camera_per_shot else "1",
          "--ImageReader.camera_model", "SIMPLE_RADIAL",
-         "--SiftExtraction.use_gpu", gpu], "features")
+         extract_opt, gpu], "features")
     run(["exhaustive_matcher", "--database_path", str(db),
-         "--SiftMatching.use_gpu", gpu], "matching")
+         match_opt, gpu], "matching")
     run(["mapper", "--database_path", str(db), "--image_path", str(d / "images"),
          "--output_path", str(d / "sparse")], "mapping")
 

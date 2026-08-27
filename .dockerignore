@@ -1,0 +1,10 @@
+# Job output: regenerated on demand, and 119MB of it.
+jobs/
+demo_out/
+out/
+sfm/
+__pycache__/
+*.pyc
+.git/
+.claude/
+results/

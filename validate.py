@@ -7,14 +7,23 @@ walls SHOULD contain. This scores recovered pixels against that truth.
 
 Coverage says how much came back. This says whether it came back CORRECT.
 """
+import os
+
 import cv2
 import numpy as np
 
 import wingcoverage as wc
 
-PANO = "/home/claude/test/pano_flat.png"
-CAM = "/home/claude/test/pan_flat_cam.npy"
-VIDEO = "/home/claude/test/pan_flat.mp4"
+# `media/` beside this file. These were absolute paths from the machine this was
+# first written on, so on any other machine the script reported a missing file
+# -- or, on Windows, silently looked in C:\home\claude\test. Run
+# `python make_test_clip.py` to produce all three.
+MEDIA = os.environ.get(
+    "SCREENX_MEDIA",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "media"))
+PANO = os.path.join(MEDIA, "pano_flat.png")
+CAM = os.path.join(MEDIA, "pan_flat_cam.npy")
+VIDEO = os.path.join(MEDIA, "pan_flat.mp4")
 
 
 def main():

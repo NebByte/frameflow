@@ -48,6 +48,7 @@ lineup moves faster than any string hardcoded here.
 """
 from __future__ import annotations
 
+import ast
 import base64
 import json
 import os
@@ -136,15 +137,29 @@ class GeminiVision:
     should cost the planner one option and not the render.
     """
 
+    # The shape the answer must take, appended to whatever the caller asks.
+    #
+    # A default rather than a constant, because it used to be stapled onto every
+    # prompt unconditionally: a caller asking anything else -- polish asks what
+    # is WRONG with a wall, not what stands beside it -- had its question
+    # silently replaced by this one and got a confident answer to a question it
+    # had not asked. Pass "" when the prompt states its own shape.
+    OFF_FRAME = ("\n\nAnswer as a JSON array of at most {n} short phrases, each "
+                 "naming ONE thing that would be immediately off the left or "
+                 "right edge of this frame, in the same place and moment. Say "
+                 "which side. No prose, no preamble.")
+
     def __init__(self, token=None, model=DEFAULT_VISION_MODEL, style="auto",
                  max_claims=4, transport=_post, project=None,
-                 location=DEFAULT_LOCATION):
+                 location=DEFAULT_LOCATION, answer_shape=None):
         self.token = token or os.environ.get("GEMINI_API_KEY", "") or \
             os.environ.get("SCREENX_TOKEN", "")
         self.model = model
         self.style = style
         self.max_claims = max_claims
         self.transport = transport      # injectable, so the logic is testable
+        self.answer_shape = (self.OFF_FRAME if answer_shape is None
+                             else answer_shape)
 
         # Vertex is the keyless route: it accepts the cloud-platform scope this
         # machine already holds, so no credential is pasted, stored, or rotated.
@@ -172,10 +187,8 @@ class GeminiVision:
 
     def body(self, prompt: str, image=None) -> dict:
         parts = [{"text": prompt + (
-            "\n\nAnswer as a JSON array of at most "
-            f"{self.max_claims} short phrases, each naming ONE thing that would "
-            "be immediately off the left or right edge of this frame, in the "
-            "same place and moment. Say which side. No prose, no preamble.")}]
+            self.answer_shape.format(n=self.max_claims)
+            if self.answer_shape else "")}]
         if image is not None:
             parts.append({"inline_data": {"mime_type": "image/png",
                                           "data": self.encode_image(image)}})
@@ -215,7 +228,18 @@ class GeminiVision:
         try:
             data = json.loads(text)
         except ValueError:
-            return [text[:120]]
+            # A model asked for JSON sometimes writes a Python list instead --
+            # single quotes, which json refuses. Degrading that to one claim
+            # lumps every phrase into a single string, and callers split on the
+            # phrases: polish drops the sides that read "acceptable" and keeps
+            # the rest, which cannot work on one blob. literal_eval reads a
+            # literal and nothing else, so it evaluates no expression.
+            try:
+                data = ast.literal_eval(text)
+            except (ValueError, SyntaxError, MemoryError, RecursionError):
+                return [text[:120]]
+            if not isinstance(data, (list, dict)):
+                return [text[:120]]
         if isinstance(data, list):
             return [str(x).strip()[:120] for x in data if str(x).strip()]
         if isinstance(data, dict):
@@ -260,16 +284,22 @@ class GeminiImageEdit:
     name = "gemini-edit"
 
     def __init__(self, token=None, model="gemini-2.5-flash-image", style="auto",
-                 transport=_post):
+                 transport=_post, project=None, location=DEFAULT_LOCATION):
         self.token = token or os.environ.get("GEMINI_API_KEY", "") or \
             os.environ.get("SCREENX_TOKEN", "")
+        # same keyless route as GeminiVision: Vertex accepts the cloud-platform
+        # scope this machine already holds, so nothing is pasted or rotated
+        self.location = location
+        self.project = project if project is not None else (
+            "" if self.token else adc_project())
         self.model = model
         self.style = style
         self.transport = transport
         self.prompt = "extend the scene sideways, same place and moment"
 
     def __call__(self, canvas, hole, confidence):
-        if not self.token:
+        token = self.credential()
+        if not token:
             raise RuntimeError(
                 "GeminiImageEdit needs a credential. Set GEMINI_API_KEY, or use "
                 "MirrorGenerator to stay local.")
@@ -282,8 +312,8 @@ class GeminiImageEdit:
             {"inline_data": {"mime_type": "image/png",
                              "data": GeminiVision.encode_image(canvas)}},
         ]}]}
-        url = f"{BASE}/models/{self.model}:generateContent"
-        payload = self.transport(url, body, auth_headers(self.token, self.style))
+        url = self.endpoint()
+        payload = self.transport(url, body, auth_headers(token, self.style))
 
         for part in payload.get("candidates", [{}])[0].get("content", {}).get("parts", []):
             blob = (part.get("inline_data") or part.get("inlineData") or {}).get("data")
@@ -298,6 +328,18 @@ class GeminiImageEdit:
             return img
         raise RuntimeError("Gemini returned no image for this frame")
 
+    def endpoint(self) -> str:
+        """Vertex when running on ADC, the public API when handed a key."""
+        if self.project and not self.token:
+            host = (VERTEX_HOST if self.location == "global"
+                    else self.location + "-" + VERTEX_HOST)
+            return (f"https://{host}/v1/projects/{self.project}/locations/"
+                    f"{self.location}/publishers/google/models/"
+                    f"{self.model}:generateContent")
+        return f"{BASE}/models/{self.model}:generateContent"
+
+    def credential(self) -> str:
+        return self.token or (adc_token() if self.project else "")
 
 def reasoner(token=None, model=DEFAULT_VISION_MODEL, depth_frac=0.22):
     """An ApiReasoner already wired to Gemini's vision endpoint."""

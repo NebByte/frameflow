@@ -95,10 +95,56 @@ def cuts_from_scores(scores, win=61, k=4.0, floor=8.0, min_gap=6):
     return cuts, z
 
 
-def segment(path, min_len=16):
+def survives_correspondence(path, crop, cut, min_ratio=0.10, max_side=320):
+    """
+    True if `cut` still looks like a cut once the pixels are compared.
+
+    Matches ORB features across the boundary. A real cut leaves almost no
+    correspondence; a fast pan or a whip still matches its own room. Returns
+    True when the evidence is unavailable -- a detector that silently drops
+    cuts it could not check would be worse than one that keeps a few false ones.
+    """
+    cap = cv2.VideoCapture(str(path))
+    x0, y0, x1, y1 = crop
+    got = []
+    for idx in (cut - 1, cut):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(idx)))
+        ok, f = cap.read()
+        if not ok:
+            cap.release()
+            return True
+        f = f[y0:y1, x0:x1]
+        if f.shape[1] > max_side:
+            sc = max_side / f.shape[1]
+            f = cv2.resize(f, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+        got.append(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY))
+    cap.release()
+
+    orb = cv2.ORB_create(600)
+    ka, da = orb.detectAndCompute(got[0], None)
+    kb, db = orb.detectAndCompute(got[1], None)
+    if da is None or db is None or len(ka) < 12 or len(kb) < 12:
+        return True
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    pairs = bf.knnMatch(da, db, k=2)
+    good = [m for m, n in (p for p in pairs if len(p) == 2)
+            if m.distance < 0.75 * n.distance]
+    ratio = len(good) / float(min(len(ka), len(kb)))
+    return ratio < min_ratio
+
+
+def segment(path, min_len=16, verify=True, verbose=False):
     crop = detect_letterbox(path)
     scores = frame_scores(path, crop)
     cuts, z = cuts_from_scores(scores)
+    if verify:
+        kept = [c for c in cuts if survives_correspondence(path, crop, c)]
+        dropped = len(cuts) - len(kept)
+        if dropped and verbose:
+            print(f"  {dropped} candidate cut(s) dropped: the pixels still "
+                  f"correspond across them", flush=True)
+        cuts = kept
     bounds = [0] + cuts + [len(scores)]
     shots = [(bounds[i], bounds[i + 1]) for i in range(len(bounds) - 1)
              if bounds[i + 1] - bounds[i] >= min_len]

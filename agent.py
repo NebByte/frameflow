@@ -142,9 +142,42 @@ class SameTakeTool(Tool):
     def __init__(self, corpus=None, matcher=None):
         self.corpus = corpus or []
         self.matcher = matcher
+        self._cache = {}          # one pooled propagation per candidate take
 
     def applicable(self, ctx):
         return bool(self.corpus) and self.matcher is not None
+
+    # Measured on aerial park footage, where a plane fits two different views of
+    # the same flat ground: true takes scored 4.3 and 12.7 mean absolute
+    # difference after warping, false ones 31.3, 34.8 and 40.3. The bar sits in
+    # the gap, nearer the false cluster, because admitting a wrong donor costs
+    # the honesty number and refusing a real one costs only coverage.
+    MAX_DISAGREEMENT = 18.0
+
+    def agrees(self, frames, donor_frames, H, ia, ib):
+        """
+        Do the matched frames actually look like each other once aligned?
+
+        Inliers say a homography exists. They do not say the two frames show the
+        same moment: self-similar, near-planar content registers happily across
+        completely different takes. Warping the donor back and comparing the
+        overlap is the check that separates them.
+        """
+        if H is None or not len(frames) or not len(donor_frames):
+            return False, 255.0
+        a = frames[min(ia, len(frames) - 1)]
+        b = donor_frames[min(ib, len(donor_frames) - 1)]
+        try:
+            h, w = a.shape[:2]
+            warped = cv2.warpPerspective(b, np.linalg.inv(H), (w, h))
+        except (cv2.error, np.linalg.LinAlgError):
+            return False, 255.0
+        overlap = warped.any(axis=2)
+        if int(overlap.sum()) < 500:            # too little to judge on
+            return False, 255.0
+        diff = float(np.abs(a[overlap].astype(np.int16)
+                            - warped[overlap].astype(np.int16)).mean())
+        return diff <= self.MAX_DISAGREEMENT, diff
 
     def run(self, ctx):
         try:
@@ -166,9 +199,86 @@ class SameTakeTool(Tool):
             return ToolResult(None, None, DONATED,
                               f"shared take found ({n} inl) but framing identical "
                               f"(scale {scale:.3f}) -- no periphery to gain")
+
+        agree, diff = self.agrees(ctx.frames, cand["frames"], H, ia, ib)
+        if not agree:
+            return ToolResult(None, None, DONATED,
+                              f"{n} inliers but the pixels disagree "
+                              f"({diff:.1f} mean abs) -- consistent with one "
+                              f"homography, not the same take")
+        pooled = self.pooled_donor(ctx, cand, H, ia, ib)
+        if pooled is not None:
+            px, note = pooled
+            return ToolResult(px, None, DONATED,
+                              f"donor scale {scale:.3f}, {n} inliers, {note}",
+                              confidence=min(1.0, n / 300))
         return ToolResult(cand["frames"][min(ib, len(cand['frames']) - 1)], None,
                           DONATED, f"donor scale {scale:.3f}, {n} inliers",
                           confidence=min(1.0, n / 300))
+
+    def pooled_donor(self, ctx, cand, H, ia, ib):
+        """
+        Both cuts as ONE donor pool, rather than one time-matched frame.
+
+        A shared take usually runs longer in the other cut and is often at a
+        higher resolution, and single-frame donation captures neither: more
+        frames mean more camera sweep, which is more periphery. crossres does
+        that composition in primary-native coordinates.
+
+        Returns (pixels, note) or None to fall back. It falls back readily --
+        crossres warns that mixing scales silently corrupts every donated pixel,
+        so a shape that does not match exactly is not worth guessing at.
+        """
+        frames = list(ctx.frames or [])
+        donor = list(cand.get("frames") or [])
+        if len(frames) < 2 or len(donor) < 2:
+            return None
+        h, cw = ctx.canvas.shape[:2]
+        w = cw - 2 * ctx.wing_w
+        if w <= 0:
+            return None
+
+        key = (id(cand), cw, h)
+        if key not in self._cache:
+            try:
+                import crossres as cr
+                got = cr.unified_propagate(
+                    frames, donor, donor, H, ia, ib,
+                    wing_ratio=ctx.wing_w / float(w), out_scale=1.0)
+            except Exception:
+                got = None
+            self._cache[key] = got
+        got = self._cache[key]
+        if not got:
+            return None
+
+        i = self._frame_index(ctx, frames)
+        if i is None or i >= len(got):
+            return None
+        canvas, filled, _tmap, src = got[i]
+        if canvas.shape[:2] != (h, cw):
+            return None
+        gained = float((filled & (src == 1)).mean()) if filled is not None else 0.0
+        if gained <= 0.0:
+            return None
+        return canvas, f"pooled take, {gained * 100:.0f}% from the other cut"
+
+    @staticmethod
+    def _frame_index(ctx, frames):
+        """
+        Which of the shot's frames this canvas is showing.
+
+        The fence guarantees the centre is the frame byte for byte, so the index
+        is recoverable by comparison rather than by threading another argument
+        through the planner.
+        """
+        h, cw = ctx.canvas.shape[:2]
+        ww = ctx.wing_w
+        centre = ctx.canvas[:, ww:cw - ww]
+        for i, f in enumerate(frames):
+            if f.shape[:2] == centre.shape[:2] and np.array_equal(f, centre):
+                return i
+        return None
 
 
 class SameLocationTool(Tool):

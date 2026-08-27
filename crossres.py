@@ -95,9 +95,17 @@ def unified_propagate(fa, fb_small, fb_high, H, ia, ib, wing_ratio=0.15,
                 return
             if proj[:, 1].max() < 0 or proj[:, 1].min() > Hh:
                 return
-            warped = cv2.warpPerspective(frame, M, (CW, Hh), flags=cv2.INTER_CUBIC)
+            # cubic here, not the shared helper's bilinear: this path exists to
+            # carry an alternate cut's NATIVE resolution across, and cubic is
+            # what keeps that detail. The mask is the part that has to change --
+            # a nearest-neighbour mask calls the warp's own darkened edge valid.
+            warped = cv2.warpPerspective(frame, M, (CW, Hh), flags=cv2.INTER_CUBIC,
+                                         borderMode=cv2.BORDER_REPLICATE)
             wm = cv2.warpPerspective(np.full((fh, fw), 255, np.uint8), M,
-                                     (CW, Hh), flags=cv2.INTER_NEAREST) > 128
+                                     (CW, Hh), flags=cv2.INTER_LINEAR,
+                                     borderMode=cv2.BORDER_CONSTANT,
+                                     borderValue=0) >= 254
+            wm = cv2.erode(wm.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
             new = wm & ~filled if only_empty else wm
             if not new.any():
                 return

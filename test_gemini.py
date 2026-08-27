@@ -80,6 +80,34 @@ def test_request_shape():
           "at most 4" in parts[0]["text"])
 
 
+def test_the_caller_owns_the_question():
+    """
+    The adapter used to staple its own task onto every prompt.
+
+    It appended "name ONE thing immediately off the left or right edge" no
+    matter what was asked, so a caller with a different question got a
+    confident answer to this one instead. `polish` asks what is *wrong* with a
+    wall; its first live run came back listing "child's arm, chair, table" --
+    a perfectly good answer to the question it never asked.
+    """
+    sink = {}
+    frame = np.full((40, 60, 3), 90, np.uint8)
+
+    v = gm.GeminiVision(token="AIzaTest", transport=fake(text_reply("[]"), sink))
+    v("what is off frame?", frame)
+    check("the off-frame task is still the default",
+          "off the left or right edge" in sink["body"]["contents"][0]["parts"][0]["text"])
+
+    v = gm.GeminiVision(token="AIzaTest", answer_shape="",
+                        transport=fake(text_reply("[]"), sink))
+    v("list the defects you can see", frame)
+    text = sink["body"]["contents"][0]["parts"][0]["text"]
+    check("a caller stating its own shape is not overridden",
+          text == "list the defects you can see", text[:60])
+    check("and the default question is gone from it",
+          "off the left or right edge" not in text)
+
+
 def test_response_parsing():
     v = lambda reply: gm.GeminiVision(token="AIzaTest", transport=fake(reply))
 
@@ -92,6 +120,16 @@ def test_response_parsing():
     got = v(text_reply("Probably a street."))("p")
     check("prose degrades to one claim rather than crashing",
           got == ["Probably a street."], str(got))
+
+    # A model told to answer in JSON sometimes writes a Python list. Lumping
+    # that into one claim is worse than it looks: callers split on the phrases
+    # -- polish drops the sides reading "acceptable" and keeps the rest -- and
+    # none of that works on a single blob.
+    got = v(text_reply("['streaking, left', 'acceptable, right']"))("p")
+    check("a python-style list still yields separate claims",
+          got == ["streaking, left", "acceptable, right"], str(got))
+    check("a bare literal is not mistaken for a list of claims",
+          v(text_reply("42"))("p") == ["42"], str(v(text_reply("42"))("p")))
 
     check("an empty candidate list yields nothing",
           v({"candidates": []})("p") == [])
@@ -183,7 +221,10 @@ def test_helper_wires_together():
 
 
 def test_image_edit_guards():
-    g = gm.GeminiImageEdit(token="")
+    # project="" as well as token="": the editor learned the same keyless ADC
+    # route the vision class has, so "no API key" stopped meaning "no
+    # credential" -- the refusal is about having nothing at all
+    g = gm.GeminiImageEdit(token="", project="")
     canvas = np.zeros((20, 60, 3), np.uint8)
     hole = np.zeros((20, 60), bool)
     hole[:, :10] = True
@@ -218,6 +259,7 @@ if __name__ == "__main__":
     test_auth_route()
     print("request")
     test_request_shape()
+    test_the_caller_owns_the_question()
     print("response")
     test_response_parsing()
     print("support ladder")

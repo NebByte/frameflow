@@ -111,8 +111,16 @@ def write(path, frames):
 
 
 if __name__ == "__main__":
+    import argparse
     import os
-    d = "/home/claude/test"
+    # `media/` beside this file, not an absolute path from whichever machine
+    # this was first written on -- it was "/home/claude/test", which on Windows
+    # silently created C:\home\claude\test and reported success.
+    ap = argparse.ArgumentParser(description="synthetic clips with known truth")
+    ap.add_argument("-o", "--outdir",
+                    default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "media"))
+    d = ap.parse_args().outdir
     os.makedirs(d, exist_ok=True)
     make_pan_flat(d)
     make_dolly_parallax(d)

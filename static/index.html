@@ -38,6 +38,18 @@
       <section class="panel">
         <header>This machine</header>
         <div class="body" id="caps"><div class="note">checking&hellip;</div></div>
+        <div class="body" style="border-top:1px solid var(--line)">
+          <label class="field">WaveSpeed key &mdash; this session only
+            <input type="password" id="wskey" placeholder="wsk_live_&hellip;"
+                   autocomplete="off" spellcheck="false">
+          </label>
+          <button class="ghost" id="savekey">Use for this session</button>
+          <span class="note" id="keystatus"></span>
+          <p class="note">Held in memory and handed to the render. Never written
+            to disk, never read back, gone when the server stops &mdash; a key
+            that reaches a file ends up in a backup or a zip, and this one bills
+            a card.</p>
+        </div>
       </section>
     </div>
 
@@ -120,6 +132,7 @@
               <option value="480">480 px</option>
               <option value="640" selected>640 px &mdash; recommended</option>
               <option value="960">960 px &mdash; slow</option>
+              <option value="1280">1280 px &mdash; native, hours</option>
             </select>
           </label>
 
@@ -128,14 +141,19 @@
               <option value="80">80 &mdash; quick look</option>
               <option value="200" selected>200 &mdash; recommended</option>
               <option value="400">400</option>
+              <option value="2000">every frame &mdash; the whole clip</option>
             </select>
           </label>
           <p class="note">Past a point the wing holds older content and staleness
             costs more than the coverage gains. On the apartment walk 200 lit four
-            shots; 400 lit three.</p>
+            shots; 400 lit three. <strong>This is a cap, not a target</strong>
+            &mdash; a shot shorter than the cap is rendered whole, and one longer
+            is cut off at it, so a 27-second take at 200 delivers under seven
+            seconds of film. Pick "every frame" when you want the take entire and
+            can wait.</p>
 
           <label class="field">Shots
-            <select id="shots">
+            <select id="maxshots">
               <option value="0" selected>All</option>
               <option value="1">First only</option>
               <option value="3">First 3</option>
@@ -152,12 +170,10 @@
             </select>
           </label>
 
-          <details class="advanced">
-            <summary>Rungs and generation</summary>
-            <label class="field">Invent wings where the gate refuses
+          <label class="field">Fill walls the measurement refuses
               <select id="dark">
-                <option value="" selected>Leave dark &mdash; honest</option>
-                <option value="mirror">mirror &mdash; local, no cost</option>
+                <option value="mirror" selected>mirror &mdash; local, no cost</option>
+                <option value="">Leave dark &mdash; recovered pixels only</option>
                 <option value="inpaint">inpaint &mdash; local</option>
                 <option value="wavespeed">wavespeed &mdash; hosted, paid per shot</option>
                 <option value="gemini-edit">gemini-edit &mdash; hosted, per frame</option>
@@ -165,8 +181,20 @@
                 <option value="hosted">hosted &mdash; your own endpoint</option>
               </select>
             </label>
-            <p class="note">Every invented pixel is written as <strong>GENERATED</strong>
-              and counted as invented. Nothing chosen here can move the real-wing number.</p>
+          <p class="note">Every invented pixel is written as <strong>GENERATED</strong>
+            and counted as invented. Nothing chosen here can move the real-wing
+            number &mdash; you get the extended film and the truth about it in the
+            same run.</p>
+
+          <label class="check" id="remoterow">
+            <input type="checkbox" id="remote">
+            <span>Run on a Colab runtime<span class="why" id="remotewhy">the
+              gaussian backend, RETRIEVED and the diffusion generator need CUDA;
+              everything else is faster here</span></span>
+          </label>
+
+          <details class="advanced">
+            <summary>Rungs and sources</summary>
             <div id="flags"></div>
           </details>
 
@@ -260,11 +288,26 @@
 
     <div class="cols cols-2">
       <section class="panel">
-        <header>Screening and reveal</header>
+        <header>The extended film <span class="right" style="color:var(--real)">screen this one</span></header>
+        <div class="body">
+          <video class="frame" id="delivered" controls preload="metadata"></video>
+          <p class="note"><strong>This is your finished film.</strong> The widened
+            master, clean: no overlay, no reveal pass, no tint. Beside it in
+            <code>deliverable/</code> are
+            <strong>left.mp4</strong>, <strong>centre.mp4</strong> and
+            <strong>right.mp4</strong> &mdash; the three projector feeds, which is
+            how a 270&deg; presentation is actually delivered.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>Review copy <span class="right">quality check only</span></header>
         <div class="body">
           <video class="frame" id="video" controls preload="metadata"></video>
-          <p class="note">First half plays as the screening. Second half is the
-            reveal: every pixel not filmed at this place is tinted magenta.</p>
+          <p class="note">A checking tool, not a second version of the film. First
+            half plays as the screening; second half is the reveal, where every
+            pixel not filmed at this place is tinted magenta. The tint is why an
+            audience never sees this copy &mdash; the film above has none of it.</p>
         </div>
       </section>
 
@@ -277,6 +320,67 @@
         </div>
       </section>
     </div>
+
+    <section class="panel">
+      <header>Finishing pass <span class="right" id="polishstate"></span></header>
+      <div class="body">
+        <p class="note">The conversion decides what can be <strong>earned</strong>.
+          Nothing in it asks whether the result looks <strong>good</strong> &mdash;
+          coverage and staleness are statistics over pixels, and neither notices a
+          wall that is one column smeared forty times, nor a thin dark line down
+          it, nor a wall that boils while the picture holds still. This is the
+          pass that asks.</p>
+        <p class="note"><strong>It settles the walls first, and that part is
+          free.</strong> Each frame's wing is medianed against its own neighbours,
+          so a wall stops re-forming every frame and any lone bad sample drops
+          out. Every pixel involved is footage this camera already shot &mdash;
+          nothing is invented, no model is called, and the real-wing figure above
+          does not move. Only what is still faulted afterwards is worth paying a
+          generator for.</p>
+        <div class="actionrow">
+          <label class="field">Repaint the shots it faults
+            <select id="polishgen">
+              <option value="">Inspect only &mdash; look, don't touch</option>
+              <option value="mirror">mirror &mdash; local, no cost</option>
+              <option value="inpaint">inpaint &mdash; local</option>
+              <option value="wavespeed">wavespeed &mdash; hosted, paid per shot</option>
+              <option value="gemini-edit">gemini-edit &mdash; hosted, per frame</option>
+              <option value="hosted">hosted &mdash; your own endpoint</option>
+            </select>
+          </label>
+          <label class="field">Shots to repaint
+            <input type="text" id="polishshots" placeholder="all faulted — or 0,3,7">
+          </label>
+          <button class="ghost" id="polishrun">Settle and inspect</button>
+        </div>
+        <p class="note warn" id="polishcost" hidden></p>
+        <p class="note"><strong>A repaint is aimed at the defect, not sprayed over
+          the wall.</strong> Dead pixels, dark lines and anything already invented
+          are fair game; photography is not. An earlier version handed the whole
+          wing to the model and a wall that was 99% filmed came back 37%, with a
+          second copy of a logo that was already on screen &mdash; to fix
+          artefacts measuring 1.5% of its columns.</p>
+        <p class="note"><strong>A note you pinned in Review changes what this
+          does.</strong> A fault is a blemish, so it is painted through the
+          blemish. A note is a statement about what belongs on that wall &mdash;
+          so it opens the whole wing, it works even on a shot the model called
+          acceptable, and everything it changes lands on <strong>DIRECTED</strong>
+          rather than GENERATED. It costs the real-wing figure exactly what it
+          takes, stated below. Wanting something is reason enough to ask for it;
+          the number just has to stay honest about it.</p>
+        <p class="note"><strong>A photographed wall may be repainted too.</strong>
+          A streaked recovered wing is a real defect and you should be able to fix
+          it &mdash; so this refuses nothing and states the cost instead. Every
+          pixel the model changes is relabelled <strong>GENERATED</strong>, or
+          <strong>DIRECTED</strong> where a note you pinned in Review drove it, and
+          the real-wing figure above falls by exactly the repainted share. The film
+          gets better; the number stays true.</p>
+      </div>
+      <div class="body flush scroll" id="polishout">
+        <div class="empty">Not inspected yet.</div>
+      </div>
+      <div class="body"><pre class="log" id="polishlog" style="max-height:120px" hidden></pre></div>
+    </section>
 
     <div class="cols cols-2">
       <section class="panel">

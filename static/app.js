@@ -66,7 +66,25 @@ async function loadCaps() {
     </label>`;
   }).join("");
   $$("[data-flag]").forEach(cb => cb.addEventListener("change", showCommand));
+
+  const cb = caps.colab || { ok: false, reason: "unavailable" };
+  $("#remote").disabled = !cb.ok;
+  $("#remoterow").classList.toggle("off", !cb.ok);
+  if (!cb.ok) $("#remotewhy").textContent = cb.reason;
 }
+
+$("#savekey").addEventListener("click", async () => {
+  const key = $("#wskey").value.trim();
+  const res = await fetch("/api/keys", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ WAVESPEED_API_KEY: key }),
+  });
+  const out = await res.json();
+  $("#wskey").value = "";                       // not kept in the page either
+  $("#keystatus").textContent = out.error
+    ? ` ${out.error}` : ` in use: ${out.set.join(", ") || "none"}`;
+  loadCaps();
+});
 
 /* -------------------------------------------------------------------- jobs */
 
@@ -96,7 +114,7 @@ $("#jobs").addEventListener("click", async e => {
   if (job.error) return;
   state.job = id; state.shots = job.shots || []; state.summary = job.summary;
   unlock("review"); unlock("report");
-  renderReview(); renderReport(); loadFiles(); go("review");
+  renderReview(); renderReport(); loadFiles(); loadPolish(); go("review");
 });
 
 /* -------------------------------------------------------------------- load */
@@ -213,7 +231,7 @@ function options() {
   const o = {
     maxw: $("#maxw").value,
     frames_per_shot: $("#fps").value,
-    max_shots: $("#shots").value,
+    max_shots: $("#maxshots").value,
     rotate: $("#rotate").value,
     wings_on_dark: $("#dark").value,
   };
@@ -221,6 +239,7 @@ function options() {
    "gate_geometry", "gate_full", "gate_narrow", "gate_detail", "gate_stale"]
     .forEach(k => { const v = $("#" + k).value.trim(); if (v) o[k] = v; });
   $$("[data-flag]").forEach(cb => { if (cb.checked) o[cb.dataset.flag] = "1"; });
+  if ($("#remote").checked) o.remote = "1";
   return o;
 }
 
@@ -249,7 +268,7 @@ function showCommand() {
   });
   $("#cmd").textContent = parts.join(" ");
 }
-$$("#maxw,#fps,#shots,#rotate,#dark,#wing,#screen_width,#screen_height,#viewer_distance,#gate_geometry,#gate_full,#gate_narrow,#gate_detail,#gate_stale")
+$$("#maxw,#fps,#maxshots,#rotate,#dark,#wing,#screen_width,#screen_height,#viewer_distance,#gate_geometry,#gate_full,#gate_narrow,#gate_detail,#gate_stale")
   .forEach(el => el.addEventListener("change", showCommand));
 
 $("#run").addEventListener("click", async () => {
@@ -295,7 +314,9 @@ function watch(id) {
     if (d.summary) {
       state.summary = d.summary;
       state.shots = d.summary.per_shot || state.shots;
-      unlock("report"); renderReview(); renderReport(); loadFiles(); go("report");
+      unlock("report"); renderReview(); renderReport(); loadFiles();
+      renderPolish({ state: "none", log: [], report: null, repaired: [] });
+      go("report");
       loadJobs();
     }
   });
@@ -468,6 +489,7 @@ function renderReport() {
     : "";
 
   $("#video").src = `/api/jobs/${state.job}/file/screenx_demo.mp4`;
+  $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4`;
 
   $("#finaltable tbody").innerHTML = rows.map(r => `
     <tr><td class="n">${r.shot}</td><td>${esc(r.motion)}</td><td>${esc(r.backend)}</td>
@@ -482,6 +504,140 @@ function renderReport() {
 $("#dl").addEventListener("click", () => {
   if (state.job) location.href = `/api/jobs/${state.job}/file/screenx_summary.json`;
 });
+
+/* ---------------------------------------------------------- finishing pass */
+
+/* What a repaint costs in money. What it costs in truth is on the panel itself,
+ * because that one applies to every generator including the free ones. */
+const POLISH_COST = {
+  wavespeed: "Roughly $0.20 per repainted shot.",
+  "gemini-edit": "Hosted, billed per frame, and subject to your image quota.",
+  hosted: "Whatever your own endpoint charges.",
+};
+
+$("#polishgen").addEventListener("change", () => {
+  const gen = $("#polishgen").value;
+  $("#polishrun").textContent = gen ? "Settle, then repaint" : "Settle and inspect";
+  const cost = POLISH_COST[gen];
+  $("#polishcost").hidden = !cost;
+  if (cost) {
+    const faulted = ((state.polish || {}).report || {}).repairable || [];
+    const n = faulted.length;
+    $("#polishcost").textContent = cost + (n
+      ? `  ${n} shot${n === 1 ? "" : "s"} are faulted, so leaving the box empty `
+        + `pays for ${n}. Name the ones worth it.`
+      : "  Name the shots worth paying for; empty means every faulted shot.");
+  }
+});
+
+$("#polishrun").addEventListener("click", async () => {
+  if (!state.job) return;
+  $("#polishrun").disabled = true;
+  $("#polishstate").textContent = "starting…";
+  const res = await fetch(`/api/jobs/${state.job}/polish`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repair: $("#polishgen").value || null,
+                           shots: $("#polishshots").value.trim() }),
+  });
+  const out = await res.json();
+  if (out.error) {
+    $("#polishrun").disabled = false;
+    $("#polishstate").textContent = out.error;
+    return;
+  }
+  pollPolish();
+});
+
+async function pollPolish() {
+  if (!state.job) return;
+  const p = await (await fetch(`/api/jobs/${state.job}/polish`)).json();
+  if (p.error && !p.report) $("#polishstate").textContent = p.error;
+  renderPolish(p);
+  if (p.state === "running") { setTimeout(pollPolish, 900); return; }
+  $("#polishrun").disabled = false;
+
+  /* A repaint moves the headline down. Leaving the old figure on screen would
+   * report pixels as filmed that a model drew a minute ago. */
+  if ((p.repaired || []).length || (p.settled || []).length) {
+    const job = await (await fetch(`/api/jobs/${state.job}`)).json();
+    if (job.summary) {
+      state.summary = job.summary;
+      state.shots = job.summary.per_shot || state.shots;
+      renderReport(); renderReview(); loadFiles();
+      /* The repaint rewrote master_widened.mp4 at the same URL, so the player
+       * would keep showing the cached, faulted cut and the polish would look
+       * as though it had done nothing. */
+      const v = `?v=${Date.now()}`;
+      $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4${v}`;
+      $("#video").src = `/api/jobs/${state.job}/file/screenx_demo.mp4${v}`;
+      renderPolish(p);
+    }
+  }
+}
+
+function renderPolish(p) {
+  state.polish = p;
+  $("#polishstate").textContent =
+    p.state === "running" ? (p.repairing ? "repainting…"
+                             : p.settling ? "settling…" : "inspecting…")
+      : p.state === "done" ? (p.error || "done") : $("#polishstate").textContent;
+
+  const log = p.log || [];
+  $("#polishlog").hidden = !log.length;
+  $("#polishlog").textContent = log.join("\n");
+
+  const found = (p.report && p.report.findings) || [];
+  if (!found.length) {
+    $("#polishout").innerHTML = `<div class="empty">${p.state === "running"
+      ? "Sampling the wings and asking the model…" : "Not inspected yet."}</div>`;
+    return;
+  }
+  const done = Object.fromEntries((p.repaired || []).map(r => [r.shot, r]));
+  const eased = Object.fromEntries(((p.report || {}).settled || []).map(r => [r.shot, r]));
+
+  /* The settle pass costs nothing and changes no number, so what it did has to
+   * be shown as a movement rather than a state: "0.4% and it was 2.3%" is the
+   * only way a reader can tell the pass worked. */
+  const arrow = (was, now, fmt) =>
+    was == null && now == null ? "—"
+      : was == null || now == null ? fmt(now == null ? was : now)
+        : `${fmt(was)} <span class="dim">→</span> <strong>${fmt(now)}</strong>`;
+  const p2 = v => v == null ? "—" : pct(v);
+  const x1 = v => v == null ? "—" : (+v).toFixed(2) + "×";
+
+  $("#polishout").innerHTML = `<table>
+    <thead><tr>
+      <th>Shot</th><th>Verdict</th><th>Dark lines</th><th>Jitter</th><th>Seam</th>
+      <th>Photographed</th><th>What the model sees</th><th>Outcome</th>
+    </tr></thead>
+    <tbody>${found.map(f => {
+      const r = done[f.shot], e = eased[f.shot];
+      const b = (e && e.before) || {}, a = (e && e.after) || {};
+      const outcome = r
+        ? `repainted &mdash; <strong>${pct(r.photographed_repainted)}</strong> of its
+           photographed wing is now ${esc(r.label)}, driven by ${esc(r.driven_by)}`
+        : e ? "settled — its own photography, nothing invented"
+          : f.bad ? "faulted — repaint to fix"
+            : f.note ? esc(f.note) : "acceptable";
+      return `<tr>
+        <td class="n">${f.shot}</td>
+        <td><span class="verdict v-${esc(f.state)}">${esc(f.state)}</span></td>
+        <td class="n">${e ? arrow(b.hairlines, a.hairlines, p2) : p2(f.hairlines)}</td>
+        <td class="n">${e ? arrow(b.jitter, a.jitter, x1) : x1(f.jitter)}</td>
+        <td class="n">${e ? arrow(b.seam, a.seam, x1) : x1(f.seam)}</td>
+        <td class="n">${pct(f.photographed)}</td>
+        <td class="wrap">${esc((f.claims || []).join("; ")) || "—"}</td>
+        <td class="wrap">${outcome}</td></tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+/* Streak is measured, not asked -- so a reader can see whether the number and
+ * the model agree before trusting either. */
+async function loadPolish() {
+  if (!state.job) return;
+  const p = await (await fetch(`/api/jobs/${state.job}/polish`)).json();
+  if (p && p.state && p.state !== "none") renderPolish(p);
+}
 
 loadCaps();
 loadJobs();

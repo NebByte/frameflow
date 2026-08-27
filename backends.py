@@ -55,12 +55,37 @@ class Backend:
         """
         raise NotImplementedError
 
+    def warp_between(self, i, j):
+        """
+        -> the single BACKGROUND warp from frame j into frame i, or None.
+
+        Kept separate from warps() because it must not recompute anything: it
+        answers from what propagate() already solved. wingcoverage.settle_wings
+        needs one warp per neighbour to align a wall across time, and re-running
+        the whole feature-matching chain to get it would double the cost of a
+        render for geometry that is already in hand.
+
+        The background layer, specifically. A wing is mostly far wall, and where
+        a nearer layer is present this warp puts it in the wrong place -- which
+        settle_wings detects as sample disagreement and declines to touch.
+        """
+        return None
+
 
 # --------------------------------------------------------------- mosaic
 
 class MosaicBackend(Backend):
     name = "mosaic"
     handles = ("ROTATION",)
+
+    def __init__(self):
+        self.last_Hs = None
+
+    def warp_between(self, i, j):
+        Hs = self.last_Hs
+        if not Hs or Hs[i] is None or Hs[j] is None:
+            return None
+        return np.linalg.inv(Hs[i]) @ Hs[j]
 
     def warps(self, frames, tracker=None):
         tracker = tracker or wc.Tracker()
@@ -75,6 +100,7 @@ class MosaicBackend(Backend):
     def propagate(self, frames, wing_w, tracker=None):
         tracker = tracker or wc.Tracker()
         Hs = wc.chain_homographies(tracker, frames)
+        self.last_Hs = Hs
         return [(c, f, t) for c, f, t in wc.propagate_wings(frames, Hs, wing_w, tracker)]
 
 
@@ -113,10 +139,36 @@ class LayeredBackend(Backend):
     def __init__(self, k_max=3, anchor_stride=4):
         self.k_max = k_max
         self.anchor_stride = anchor_stride
+        self.last_chains = None
+
+    def warp_between(self, i, j):
+        ch = self.last_chains
+        if not ch:
+            return None
+        bg = ch[-1]                  # chains are sorted fastest-first: last is far
+        if bg[i] is None or bg[j] is None:
+            return None
+        return np.linalg.inv(bg[i]) @ bg[j]
+
+    def _feats(self, tracker, frame):
+        """
+        ORB is the expensive part, and consecutive pairs share a frame.
+
+        Extracting per PAIR does every frame twice: once as the source of one
+        pair and once as the destination of the next. Keyed by identity because
+        frames are the same array objects throughout a shot.
+        """
+        cache = getattr(self, "_fcache", None)
+        if cache is None:
+            cache = self._fcache = {}
+        k = id(frame)
+        if k not in cache:
+            cache[k] = tracker.features(frame)
+        return cache[k]
 
     def _pair_layers(self, tracker, fsrc, fdst):
-        (k1, d1) = tracker.features(fsrc)
-        (k2, d2) = tracker.features(fdst)
+        (k1, d1) = self._feats(tracker, fsrc)
+        (k2, d2) = self._feats(tracker, fdst)
         p1, p2 = tracker.match(k1, d1, k2, d2)
         if len(p1) < 25:
             return []
@@ -173,6 +225,7 @@ class LayeredBackend(Backend):
                 prev = next((chains[l][t] for t in range(j - 1, -1, -1)
                              if chains[l][t] is not None), np.eye(3))
                 chains[l][j] = prev @ Hl if Hl is not None else None
+        self.last_chains = chains
 
         out = []
         for i in range(n):
@@ -182,9 +235,19 @@ class LayeredBackend(Backend):
             canvas[:, wing_w:wing_w + w] = frames[i]
             filled[:, wing_w:wing_w + w] = True
 
+            # `patience`: donors are visited nearest-first and coverage only
+            # grows, so a run of them adding nothing means the further ones
+            # will not either. Without it every frame warps every other frame
+            # once for each layer -- the old `filled.mean() > 0.995` guard only
+            # ever fired on a wall that filled almost completely, and one that
+            # tops out at 93% made this quietly quadratic.
+            stall, patience = 0, 15
             for j in sorted(range(n), key=lambda j: abs(j - i)):
-                if j == i or filled.mean() > 0.995:
+                if j == i:
                     continue
+                if filled.mean() > 0.995 or stall >= patience:
+                    break
+                before = int(filled.sum())
                 # back-to-front: later layers are further away, drawn first,
                 # so nearer layers overwrite them where they overlap
                 for l in range(n_layers - 1, -1, -1):
@@ -192,15 +255,18 @@ class LayeredBackend(Backend):
                     if Hi is None or Hj is None:
                         continue
                     M = shift @ np.linalg.inv(Hi) @ Hj
-                    warped = cv2.warpPerspective(frames[j], M, (cw, h))
-                    wm = cv2.warpPerspective(np.full((h, w), 255, np.uint8), M,
-                                             (cw, h), flags=cv2.INTER_NEAREST) > 128
+                    # same helper the mosaic path uses: a bilinear warp against a
+                    # black border darkens its own edge, and a nearest-neighbour
+                    # mask calls those pixels valid -- one hairline per donor
+                    warped, wm = wc.warp_with_mask(frames[j], M, (cw, h))
                     new = wm & ~filled
                     if not new.any():
                         continue
+                    warped = wc.match_exposure(warped, canvas, wm & filled)
                     canvas[new] = warped[new]
                     tmap[new] = abs(j - i)
                     filled |= new
+                stall = 0 if int(filled.sum()) > before else stall + 1
             out.append((canvas, filled, tmap))
         return out
 

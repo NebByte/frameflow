@@ -1,0 +1,25 @@
+# The 3D reconstruction path only. Not needed for anything else.
+#
+# `GaussianBackend` reconstructs a shot's static scene and renders a widened
+# frustum, which is the only route that places off-plane content correctly --
+# a single homography puts it at the wrong offset, which is why a recovered
+# wall can repeat signage that is still on screen in the centre.
+#
+# It requires CUDA and raises on unavailable hardware rather than falling back,
+# because a silent downgrade to mosaic would put homography pixels behind a 3D
+# confidence label and corrupt the metric the whole toolkit exists to protect.
+#
+#   pip install -r requirements.txt -r requirements-gpu.txt
+#
+# torch must match your CUDA version; install it from pytorch.org first if the
+# default wheel is wrong for your machine.
+
+torch>=2.2
+gsplat>=1.0
+
+# Optional: the local diffusion generator, for inventing wings on shots the
+# gate refuses. Everything it produces is labelled GENERATED.
+diffusers>=0.27
+transformers>=4.40
+accelerate>=0.30
+Pillow>=10.0

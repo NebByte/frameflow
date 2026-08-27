@@ -195,7 +195,8 @@ def auto_panels(canvas_shape, wing_w, theatre: Theatre, height_px=300):
 
 
 def render(canvas, wing_w, theatre: Theatre = None, filled=None,
-           provenance=None, mark_generated=False, auto_aspect=True):
+           provenance=None, mark_generated=False, auto_aspect=True,
+           height_px=None):
     """
     Render the three projector feeds.
 
@@ -213,7 +214,12 @@ def render(canvas, wing_w, theatre: Theatre = None, filled=None,
     """
     theatre = theatre or Theatre()
     if auto_aspect:
-        cwid, wwid, hpx, _ = auto_panels(canvas.shape, wing_w, theatre)
+        # height_px: a review panel is 300px because that is enough to judge a
+        # conversion on. A deliverable is projected, so the caller passes the
+        # real height and the feeds come out at the resolution they will be
+        # shown at rather than a thumbnail of it.
+        cwid, wwid, hpx, _ = auto_panels(canvas.shape, wing_w, theatre,
+                                         height_px=height_px or 300)
         theatre = Theatre(**{**theatre.__dict__,
                              "panel_width": wwid, "panel_height": hpx})
     Hs = wall_homographies(canvas.shape, wing_w, theatre)

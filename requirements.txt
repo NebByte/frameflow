@@ -1,2 +1,27 @@
+# What the toolkit and the agent need to run.
+#
+# This used to pin opencv and numpy only, while the code imported a good deal
+# more -- fine on the machine it was written on and broken everywhere else.
+#
+# The heavy dependencies (torch, gsplat, diffusers) are deliberately NOT here.
+# Every one of them is imported inside the function that needs it, so the CPU
+# path -- which is the whole product -- installs and runs without a gigabyte of
+# CUDA wheels. See requirements-gpu.txt for the 3D reconstruction path.
+
+# --- the pipeline
 opencv-python-headless>=4.9
 numpy>=1.26
+
+# --- the agent: ADK brings google-genai, which reaches Gemini on Vertex AI
+google-adk>=2.8
+
+# --- the ledger. Reads in the agent go through the official ClickHouse MCP
+#     server (`uvx mcp-clickhouse`); this client is what writes the rows.
+clickhouse-connect>=0.8
+
+# --- serving. ADK already depends on fastapi and uvicorn; pinned here anyway
+#     because server.py imports them directly and a transitive dependency is
+#     not a promise.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27

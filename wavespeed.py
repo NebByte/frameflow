@@ -59,8 +59,21 @@ def _request(url, body=None, headers=None, timeout=TIMEOUT):
     req = urllib.request.Request(url, data=data, headers=headers or {})
     if data is not None:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as e:
+        # The body of a rejection is the only thing that says WHY. Discarding it
+        # turns a service that explained itself into "HTTP Error 400: Bad
+        # Request", which is indistinguishable from a wrong key, an oversized
+        # clip and an unsupported aspect ratio -- and each has a different fix.
+        try:
+            detail = (e.read() or b"")[:400].decode("utf-8", "replace").strip()
+        except OSError:
+            detail = ""
+        raise urllib.error.HTTPError(
+            e.url, e.code, f"{e.reason}: {detail}" if detail else str(e.reason),
+            e.headers, None) from None
     try:
         return json.loads(raw)
     except ValueError:
@@ -252,9 +265,22 @@ class WaveSpeedOutpainter:
         Matching height preserves scale; the surplus is trimmed symmetrically.
         """
         target_w = int(w + 2 * wing_w)
+        if f is None or f.size == 0 or f.ndim != 3:
+            raise ValueError(f"the job returned an unusable frame: "
+                             f"{None if f is None else getattr(f, 'shape', '?')}")
         fh, fw = f.shape[:2]
+        if fh <= 0 or fw <= 0:
+            raise ValueError(f"the job returned a degenerate frame {fw}x{fh}")
         if fh != h:
-            f = cv2.resize(f, (max(1, int(round(fw * h / float(fh)))), h))
+            # A returned frame far from our aspect makes this scale wildly, and
+            # cv2 answers an out-of-range size with "Unknown C++ exception",
+            # which says nothing about which of a dozen calls raised it.
+            scaled_w = int(round(fw * h / float(fh)))
+            if not 0 < scaled_w <= 1 << 15:
+                raise ValueError(
+                    f"the job returned {fw}x{fh}, which height-matches to "
+                    f"{scaled_w}px wide against a {target_w}px canvas")
+            f = cv2.resize(f, (scaled_w, h))
             fh, fw = f.shape[:2]
         if fw == target_w:
             return f

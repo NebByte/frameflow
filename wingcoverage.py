@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import os
+import warnings
 
 import cv2
 import numpy as np
@@ -41,6 +42,80 @@ PARALLAX_DISAGREE_PX = 8.0  # ...and the two layers must map the frame this far 
 COVER_ON = 0.45        # wings on above this coverage
 COVER_OFF = 0.32       # wings off below this (hysteresis)
 MIN_RUN = 12           # frames; ignore wing states shorter than this
+
+
+# ---------------------------------------------------------------- warping
+
+def warp_with_mask(img, M, size, border=cv2.BORDER_REPLICATE):
+    """
+    Warp an image and return the mask of pixels that are ACTUALLY valid.
+
+    The obvious spelling of this -- bilinear for the image, INTER_NEAREST for a
+    255-filled mask -- is wrong, and it is where the thin dark lines down every
+    recovered wall came from.
+
+    A bilinear warp against a zero border blends the outermost source pixels
+    with black. INTER_NEAREST on the mask rounds those same pixels to "valid",
+    so a column at roughly half brightness gets composited into the wall and
+    labelled RECOVERED. Every donor footprint contributed one such hairline;
+    2.3% of wing columns in a delivered film were these.
+
+    Two changes fix it for good:
+      - the image warps with BORDER_REPLICATE, so an edge sample can only ever
+        blend with more image, never with black
+      - the mask warps BILINEAR and is accepted only where it comes back fully
+        opaque, then erodes by one pixel
+
+    The cost is a one-pixel ring of coverage per donor. That is the honest
+    trade: those pixels were never wholly observed, and claiming them was what
+    put a black line where a wall should be.
+    """
+    warped = cv2.warpPerspective(img, M, size, flags=cv2.INTER_LINEAR,
+                                 borderMode=border)
+    h, w = img.shape[:2]
+    m = cv2.warpPerspective(np.full((h, w), 255, np.uint8), M, size,
+                            flags=cv2.INTER_LINEAR,
+                            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    mask = m >= 254
+    if mask.any():
+        mask = cv2.erode(mask.astype(np.uint8), np.ones((3, 3), np.uint8),
+                         iterations=1).astype(bool)
+    return warped, mask
+
+
+def match_exposure(src, dst, where, max_gain=1.6):
+    """
+    Put a donor on the same exposure as the wall it is joining.
+
+    Two frames of a handheld pan are not the same brightness -- auto-exposure
+    rides the light in the room -- so a donor pasted straight in meets its
+    neighbour at a step, and a step down a wall reads as a seam. Solves a single
+    gain and bias over the pixels the two already share and applies it.
+
+    `where` is the overlap: pixels this donor covers that are already filled.
+    Too small an overlap means the fit is noise, so it is left alone.
+    """
+    n = int(where.sum())
+    if n < 200:
+        return src
+    a = src[where].reshape(-1, 3).astype(np.float64)
+    b = dst[where].reshape(-1, 3).astype(np.float64)
+    # a gain and a bias are two numbers per channel; fitting them on a quarter
+    # of a million pixels rather than a few thousand buys no accuracy and costs
+    # real time, since this runs once per donor per frame
+    if n > 4000:
+        step = n // 4000
+        a, b = a[::step], b[::step]
+    out = src.astype(np.float32)
+    for c in range(3):
+        va = a[:, c].var()
+        if va < 1e-3:
+            continue
+        gain = float(np.clip(np.cov(a[:, c], b[:, c])[0, 1] / va,
+                             1.0 / max_gain, max_gain))
+        bias = float(b[:, c].mean() - gain * a[:, c].mean())
+        out[:, :, c] = out[:, :, c] * gain + bias
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 # ---------------------------------------------------------------- shot detect
@@ -155,6 +230,18 @@ def classify_motion(tracker, frames, gap=3):
                  layer2_purity=round(float(np.median(pus)) if pus else 0.0, 3))
 
     # a second coherent layer that maps the frame somewhere else = parallax
+    #
+    # A ratio trigger was tried here and removed. A gym pan reports layer2=0.013
+    # against a 0.04 margin while its two layers disagree by 11.4px on a frame
+    # that moved 4.0px, so on paper it is thinly-supported parallax being missed
+    # -- and routing it to LayeredBackend did nothing for the defect it was
+    # meant to fix. Measured on 80 frames of that clip, mosaic and layered both
+    # left the wing/centre seam at 1.88x, while layered dropped hold-out
+    # geometry from 32.4 to 29.2 dB and put a warped notch in the frame corner.
+    # The threshold is not what is wrong: a wing built from ANY single warp per
+    # layer places off-plane content at the wrong offset, which is why the walls
+    # can repeat signage that is still on screen. Fixing that needs depth, not a
+    # different classifier -- see GaussianBackend.
     if l2 >= PARALLAX_MARGIN and dg > PARALLAX_DISAGREE_PX:
         return "PARALLAX", stats
     return "ROTATION", stats
@@ -225,13 +312,32 @@ def chain_homographies(tracker, frames, anchor_stride=5):
 
 # ---------------------------------------------------------------- propagation
 
-def propagate_wings(frames, Hs, wing_w, tracker=None):
+def propagate_wings(frames, Hs, wing_w, tracker=None, stick=True, stick_max=24,
+                    exposure=True):
     """
-    For each frame i, fill the extended canvas [-wing_w, W+wing_w] using the
-    NEAREST-IN-TIME frame that saw each pixel.
+    For each frame i, fill the extended canvas [-wing_w, W+wing_w] from the
+    frames that saw each pixel.
 
     Registration quality is set by chain_homographies, which uses anchor frames
     to bound drift accumulation.
+
+    Two rules beyond "nearest in time wins", both aimed at how the wall behaves
+    OVER TIME rather than in any single frame:
+
+    `stick`     a pixel keeps the donor that fed it last frame for as long as
+                that donor still covers it and is still fresh. The plain
+                nearest-in-time contest is re-run per frame, so the boundary
+                between two donors' territory crawls as the camera moves and the
+                whole wall re-assembles every frame -- measured at 2.6x the
+                centre's frame-to-frame change, and visible as a shimmer. A
+                pixel fed by one photograph for a stretch is steady.
+
+    `exposure`  a donor is gain/bias matched to the wall it is joining before it
+                composites, so two frames shot at different auto-exposure no
+                longer meet at a step. See match_exposure.
+
+    Neither invents anything: every pixel is still one photographed pixel from
+    this camera, so the provenance ladder is untouched.
 
     Returns per frame: wing image, coverage mask, temporal-offset map (frames).
     """
@@ -240,11 +346,18 @@ def propagate_wings(frames, Hs, wing_w, tracker=None):
     cw = w + 2 * wing_w
     out = []
     tracker = tracker or Tracker()
+    shift = np.array([[1, 0, wing_w], [0, 1, 0], [0, 0, 1]], np.float64)
+    shift_inv = np.linalg.inv(shift)
+    corners = np.array([[0, 0], [w, 0], [w, h], [0, h]],
+                       np.float64).reshape(-1, 1, 2)
+
+    prev_donor, prev_i = None, None
 
     for i in range(n):
         canvas = np.zeros((h, cw, 3), np.uint8)
         filled = np.zeros((h, cw), bool)
         tmap = np.zeros((h, cw), np.int32)
+        donor = np.full((h, cw), -1.0, np.float32)   # which frame fed each pixel
 
         # the frame itself occupies the centre, always real, offset 0
         canvas[:, wing_w:wing_w + w] = frames[i]
@@ -252,46 +365,204 @@ def propagate_wings(frames, Hs, wing_w, tracker=None):
 
         if Hs[i] is None:
             out.append((canvas, filled, tmap))
+            prev_donor, prev_i = None, None
             continue
 
         Hi_inv = np.linalg.inv(Hs[i])
-        shift = np.array([[1, 0, wing_w], [0, 1, 0], [0, 0, 1]], np.float64)
+        cache = {}
 
-        # visit sources nearest in time first, so early fills win
-        for j in sorted(range(n), key=lambda j: abs(j - i)):
+        def place(j, want=None):
+            """Composite donor j into whatever of `want` it can actually cover."""
             if j == i or Hs[j] is None:
-                continue
-            if filled.mean() > 0.995:
-                break
-            M = shift @ Hi_inv @ Hs[j]
-
-            # cheap cull: does frame j's footprint touch anything unfilled?
-            corners = np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float64).reshape(-1, 1, 2)
-            proj = cv2.perspectiveTransform(corners, M).reshape(-1, 2)
-            x0, y0 = proj.min(0)
-            x1, y1 = proj.max(0)
-            if x1 < 0 or x0 > cw or y1 < 0 or y0 > h:
-                continue
-
-            warped = cv2.warpPerspective(frames[j], M, (cw, h))
-            wmask = cv2.warpPerspective(
-                np.ones((h, w), np.uint8) * 255, M, (cw, h), flags=cv2.INTER_NEAREST
-            ) > 128
-
+                return
+            if j not in cache:
+                M = shift @ Hi_inv @ Hs[j]
+                proj = cv2.perspectiveTransform(corners, M).reshape(-1, 2)
+                x0, y0 = proj.min(0)
+                x1, y1 = proj.max(0)
+                if x1 < 0 or x0 > cw or y1 < 0 or y0 > h:   # cheap cull
+                    cache[j] = None
+                else:
+                    cache[j] = warp_with_mask(frames[j], M, (cw, h))
+            if cache[j] is None:
+                return
+            warped, wmask = cache[j]
             new = wmask & ~filled
+            if want is not None:
+                new = new & want
             if not new.any():
-                continue
+                return
+            if exposure:
+                warped = match_exposure(warped, canvas, wmask & filled)
             canvas[new] = warped[new]
             tmap[new] = abs(j - i)
-            filled |= new
+            donor[new] = j
+            filled[new] = True        # in place: `filled |= new` rebinds it local
+
+        # 1. whatever fed this wall last frame keeps it, while it is still fresh
+        if stick and prev_donor is not None and Hs[prev_i] is not None:
+            Mp = shift @ Hi_inv @ Hs[prev_i] @ shift_inv
+            carried = cv2.warpPerspective(prev_donor, Mp, (cw, h),
+                                          flags=cv2.INTER_NEAREST,
+                                          borderMode=cv2.BORDER_CONSTANT,
+                                          borderValue=-1.0)
+            ids = [int(v) for v in np.unique(carried)
+                   if v >= 0 and abs(int(v) - i) <= stick_max]
+            for j in sorted(ids, key=lambda j: abs(j - i)):
+                place(j, want=(carried == j))
+
+        # 2. nearest in time fills whatever is still open
+        #
+        # `patience` is what stops this being quadratic. Donors are visited
+        # nearest-first and coverage only grows, so once a run of them in a row
+        # has nothing left to add, the ones further out will not either -- they
+        # see less of the wing, not more. The old spelling relied on coverage
+        # crossing 99.5% to break, which a wall that tops out at 93% never does:
+        # every frame then warped every other frame, for nothing.
+        #
+        # It is a heuristic and it has one blind spot worth naming: a camera
+        # that HOLDS for longer than `patience` frames and then moves again
+        # produces a run of donors that add nothing followed by donors that
+        # would have, and this stops at the first run. Measured against the
+        # exhaustive scan on 80 frames of a handheld gym pan the wing came out
+        # 0.909 filled against 0.910, so the cost on real footage is a tenth of
+        # a percent; a locked-off hold long enough to trip it is a shot the
+        # gate refuses anyway.
+        stall, patience = 0, 15
+        for j in sorted(range(n), key=lambda j: abs(j - i)):
+            if filled.mean() > 0.995 or stall >= patience:
+                break
+            before = int(filled.sum())
+            place(j)
+            stall = 0 if int(filled.sum()) > before else stall + 1
 
         out.append((canvas, filled, tmap))
+        prev_donor, prev_i = donor, i
     return out
+
+
+def settle_wings(propagated, warp_of, wing_w, k=2, min_samples=3, max_spread=18.0):
+    """
+    Damp the shimmer out of a recovered wall using only its own photography.
+
+    Even with sticky donors a wall pixel is resampled from a different exposure
+    of the same surface as the camera moves, and the residue reads as a fine
+    boil across the wing. This aligns each frame's NEIGHBOURS into its own
+    coordinates and takes the per-pixel median of the wall.
+
+    A median of aligned samples of the same surface, all shot a fraction of a
+    second apart by the same camera on the same move, is still that camera's
+    photography -- closer to stacking frames than to inventing one. So the rung
+    does not move, and neither does the metric: this only refines the VALUE of
+    pixels that were already recovered. It never fills an empty pixel, never
+    touches `filled` or `tmap`, and never crosses into the centre.
+
+    `max_spread` is what keeps it honest on everything a single warp cannot
+    align. Where the aligned samples DISAGREE -- a person walking through the
+    wing, or a near layer that the background homography puts in the wrong
+    place -- the median of them would be a smear, so the original is kept. Only
+    pixels whose samples already agree get replaced, which is exactly the set
+    where the disagreement was noise rather than content.
+
+    `warp_of(i, t)` maps frame t into frame i's coordinates, or returns None.
+    """
+    n = len(propagated)
+    if n == 0 or k < 1 or wing_w < 1:
+        return propagated
+    h, cw = propagated[0][1].shape
+    w = cw - 2 * wing_w
+    shift = np.array([[1, 0, wing_w], [0, 1, 0], [0, 0, 1]], np.float64)
+    shift_inv = np.linalg.inv(shift)
+
+    def bands(a):
+        """The two wings side by side; the centre is not ours to touch."""
+        return np.concatenate([a[:, :wing_w], a[:, cw - wing_w:]], axis=1)
+
+    # Written back in place, behind the window rather than into a second list.
+    #
+    # A full stack out beside a full stack in doubles peak memory, and at 1024px
+    # over 799 frames that is four gigabytes of canvases for no reason: once the
+    # window has passed frame i - k - 1, nothing will read it as a neighbour
+    # again, so its settled version can take its slot.
+    pending = {}
+    for i in range(n):
+        canvas, filled, tmap = propagated[i]
+        vals = [bands(canvas).astype(np.float32)]
+        oks = [bands(filled)]
+        for t in range(max(0, i - k), min(n, i + k + 1)):
+            if t == i:
+                continue
+            M = warp_of(i, t)
+            if M is None:
+                continue
+            M = shift @ M @ shift_inv
+            wcv, wm = warp_with_mask(propagated[t][0], M, (cw, h))
+            fm = cv2.warpPerspective(propagated[t][1].astype(np.uint8) * 255, M,
+                                     (cw, h), flags=cv2.INTER_NEAREST) > 128
+            vals.append(bands(wcv).astype(np.float32))
+            oks.append(bands(wm & fm))
+
+        if len(vals) < min_samples:
+            pending[i] = (canvas, filled, tmap)
+            _retire(propagated, pending, i - k - 1)
+            continue
+
+        stack = np.stack(vals)                     # S x h x 2ww x 3
+        seen = np.stack(oks)                       # S x h x 2ww
+        masked = np.where(seen[..., None], stack, np.nan)
+        # The agreement test asks whether the REPLACEMENTS agree, which means
+        # asking the neighbours about each other and leaving this frame's own
+        # sample out of it. Including it gets the question backwards: a pixel
+        # sitting on a baked-in hairline disagrees with four clean neighbours,
+        # and a test that reads that as "the samples disagree" vetoes fixing
+        # precisely the pixel most in need of fixing. Four samples that agree
+        # with each other are a good value whatever the fifth one says.
+        others = masked[1:] if len(vals) > 1 else masked
+        # a pixel no sample saw is an all-NaN slice, which is the normal case
+        # out at the edge of the wall rather than anything to warn about
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            med = np.nanmedian(masked, axis=0)
+            # Median absolute deviation, not the min-to-max range: one odd
+            # sample barely moves a MAD and sends a range wide open, and it is
+            # genuine disagreement -- a figure crossing the wing, a near layer
+            # the background warp cannot place -- that must veto a replacement,
+            # not a speck.
+            omed = np.nanmedian(others, axis=0)
+            mad = np.nanmedian(np.abs(others - omed), axis=0)
+        spread = np.nan_to_num(mad, nan=1e9).max(axis=2)
+        agree = np.nan_to_num(np.stack(oks)[1:].sum(axis=0) if len(oks) > 1
+                              else seen.sum(axis=0))
+        take = ((seen.sum(axis=0) >= min_samples) & bands(filled)
+                & (agree >= min_samples - 1) & (spread <= max_spread))
+
+        band = bands(canvas).copy()
+        band[take] = np.nan_to_num(med, nan=0.0)[take].astype(np.uint8)
+
+        settled = canvas.copy()
+        settled[:, :wing_w] = band[:, :wing_w]
+        settled[:, cw - wing_w:] = band[:, wing_w:]
+        settled[:, wing_w:wing_w + w] = canvas[:, wing_w:wing_w + w]   # the fence
+        pending[i] = (settled, filled, tmap)
+        _retire(propagated, pending, i - k - 1)
+
+    for idx in sorted(pending):
+        propagated[idx] = pending[idx]
+    return propagated
+
+
+def _retire(propagated, pending, idx):
+    """Move a finished frame into the stack it came from, once it is safe."""
+    if idx >= 0 and idx in pending:
+        propagated[idx] = pending.pop(idx)
 
 
 # ---------------------------------------------------------------- metrics
 
-def detail_weight(canvas, floor=2.0, full=12.0, win=9):
+DETAIL_WIN_AT = 480      # the working width the 9-pixel window was tuned at
+
+
+def detail_weight(canvas, floor=2.0, full=12.0, win=None):
     """
     How much INFORMATION a recovered pixel carries.
 
@@ -303,7 +574,28 @@ def detail_weight(canvas, floor=2.0, full=12.0, win=9):
 
     floor: local std below this carries no information at all
     full : local std at or above this is fully informative
+
+    THE WINDOW IS A FRACTION OF THE FRAME, NOT A COUNT OF PIXELS
+    -----------------------------------------------------------
+    It was a fixed nine pixels, and that made the whole metric punish
+    resolution. A physical texture spread over twice as many pixels varies less
+    within any nine of them, so the same shot measured:
+
+        480px  detail 0.62      960px  detail 0.42      1280px  detail 0.34
+
+    -- identical content, scored a third lower for being sharper. That is
+    backwards on its own terms, and it was not theoretical: a 1024px render of a
+    clip that passed comfortably at 480px came back at 24.57% effective
+    coverage against a 25% bar, was gated OFF, and delivered a film with black
+    walls. The operator had done nothing but ask for more resolution.
+
+    Nine pixels at 480 wide is 1.875% of the frame. That fraction is what was
+    tuned, so that fraction is what is kept, and a window now spans the same
+    piece of the WORLD at any working width.
     """
+    if win is None:
+        win = int(round(9.0 * canvas.shape[1] / DETAIL_WIN_AT)) | 1
+    win = max(3, win)
     g = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY).astype(np.float32)
     mean = cv2.boxFilter(g, -1, (win, win))
     sq = cv2.boxFilter(g * g, -1, (win, win))

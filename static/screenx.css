@@ -54,7 +54,13 @@ body { overflow-x: hidden; }
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 100vh;
+  min-width: 0;
 }
+
+/* A grid item's automatic minimum size is min-content, not zero, so one
+ * unshrinkable descendant widens the whole track and every sibling stretches
+ * with it. Same reason .panel carries min-width: 0. */
+.app > * { min-width: 0; }
 
 .topbar {
   display: flex;
@@ -77,6 +83,28 @@ body { overflow-x: hidden; }
 
 .stages { display: flex; gap: 2px; margin-left: auto; }
 
+/* A five-tab bar is 375px before the wordmark, so on a phone the topbar forced
+ * the whole grid wider than the viewport and every panel inherited it. The tab
+ * strip scrolls inside itself instead -- clipping the page with overflow
+ * hidden would have hidden the symptom and kept the broken layout. */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 44px; gap: 8px; padding: 6px 12px; }
+  /* the wordmark plus its qualifier cannot shrink, and pinned the topbar 9px
+   * past a 390px viewport on its own */
+  .brand { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+           white-space: nowrap; }
+  .brand span { display: none; }
+  .stages {
+    margin-left: 0;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .stages::-webkit-scrollbar { display: none; }
+  .stage { padding: 10px 11px 8px; flex: 0 0 auto; }
+  .workspace { padding: 10px; }
+}
+
 .stage {
   font: 500 11px/1 var(--ui);
   letter-spacing: .1em;
@@ -93,6 +121,11 @@ body { overflow-x: hidden; }
 .stage[disabled] { color: #3d444a; cursor: not-allowed; }
 
 .workspace { padding: 14px; display: grid; gap: 14px; align-content: start; }
+
+/* `display: grid` on a stage beats the browser's own [hidden] { display: none },
+ * so every stage rendered at once and the tabs did nothing. Only visible by
+ * looking at the page -- the markup and the JS were both correct. */
+.workspace[hidden] { display: none; }
 
 .cols { display: grid; gap: 14px; grid-template-columns: 1fr; }
 @media (min-width: 1100px) {
@@ -271,6 +304,17 @@ select:focus, input:focus, textarea:focus {
 }
 textarea { font-family: var(--ui); resize: vertical; min-height: 60px; }
 
+/* A control and the button that acts on it, side by side on a wide screen and
+ * stacked when there is no room -- the select must never drag the page sideways. */
+.actionrow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.actionrow label.field { flex: 1 1 260px; min-width: 0; }
+
 .check {
   display: flex;
   gap: 9px;
@@ -389,3 +433,8 @@ pre.log b { color: var(--ink-dim); font-weight: 400; }
 }
 
 .empty { padding: 30px 12px; text-align: center; color: var(--ink-faint); font-size: 12px; }
+
+/* A settled measurement is shown as a movement -- "2.3% -> 0.4%" -- because
+   the pass changes no headline number, so the before is the only thing that
+   makes the after mean anything. The arrow carries no information itself. */
+.dim { color: var(--ink-dim); }

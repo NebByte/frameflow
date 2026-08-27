@@ -86,3 +86,74 @@ When the network and a GPU are back, in this order:
 3. If it still fails, the answer is footage, not tooling: one continuous move
    from a wide into a close-up gives COLMAP a connected chain instead of two
    islands.
+
+---
+
+# COLMAP installed, and what it settled
+
+COLMAP 4.1.1 (windows-nocuda, official release) at `C:\Users\talig\tools\colmap`,
+on the user PATH. `sfm.colmap_available()` is now True and the app's capability
+probe reports it.
+
+## The question it was installed to answer
+
+**Does cross-setup registration clear the 80% bar since the spread-sampling fix?**
+
+    scene000: 3/48 registered (6%), REFUSED, partial
+    0 usable, 1 partial, 4 single-setup scenes skipped
+
+**No -- 6%.** Worse than the 50% measured on Colab, and nowhere near the bar. So
+RETRIEVED is blocked by the footage, not by tooling and not by the absence of a
+GPU: two aerial passes over the same ground do not register, and rendering them
+was never the obstacle. That is what the install bought, and it cost no GPU time.
+
+## Two bugs it exposed
+
+**1. COLMAP 4 renamed the option the headless fix depends on.**
+
+    3.x:  --SiftExtraction.use_gpu   --SiftMatching.use_gpu
+    4.x:  --FeatureExtraction.use_gpu --FeatureMatching.use_gpu
+
+An unknown option is fatal, not ignored -- "Failed to parse options -
+unrecognised option" -- and it surfaced as `colmap features failed`, which is
+also exactly what a missing display produces. A version mismatch and the
+headless problem were indistinguishable from the log. `sfm.gpu_option_names()`
+now asks the binary once and caches the answer.
+
+**2. SameTakeTool accepted matches on inlier count alone, and DONATED counts as
+photographed.**
+
+Measured on the drone clip, warping each accepted donor back and comparing the
+overlap:
+
+    pair  inliers  mean abs diff
+    0-1     321       4.3   same take
+    0-2      70      40.3   DIFFERENT CONTENT
+    2-3      84      31.3   DIFFERENT CONTENT
+    3-4     133      12.7   same take
+    4-5      71      34.8   DIFFERENT CONTENT
+
+Three of five accepted matches were different moments. Aerial footage of a park
+is near-planar and self-similar, which is precisely where a homography fits two
+unrelated views. Inliers establish "consistent with one homography" and never
+"the same take" -- and because DONATED is inside REAL_LEVELS, each false match
+reported invented periphery as photographed.
+
+`SameTakeTool.agrees()` now warps the donor and refuses above 18.0 mean absolute
+difference, a bar sitting in the measured gap and deliberately nearer the false
+cluster: admitting a wrong donor costs the honesty number, refusing a real one
+costs only coverage.
+
+**Effect, and why it is the right kind of guard:**
+
+| footage | DONATED before | after |
+|---------|----------------|-------|
+| drone over park | 81.54% | **36.92%** |
+| apartment walk | 8.44% | **8.44%** |
+
+It removes the false cluster and leaves genuine matches untouched -- 
+discriminating rather than merely conservative. The apartment figure published
+in `results/` and the showcase stands unchanged; the drone figure was inflated
+and is corrected here.
+
+423 assertions, eight suites.

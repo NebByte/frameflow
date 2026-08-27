@@ -79,6 +79,16 @@ def background_plate(frames, Hs, i, window=12, samples=6):
     h, w = frames[0].shape[:2]
     lo, hi = max(0, i - window), min(n, i + window + 1)
     idx = [j for j in np.linspace(lo, hi - 1, samples).astype(int) if j != i]
+
+    # chain_homographies returns None for any frame it could not register, and
+    # says so in its own docstring -- a hop that fails leaves that anchor
+    # unusable. This assumed every frame had a matrix, so the first
+    # unregisterable frame in a shot turned into `None @ ndarray` and killed the
+    # whole run. A frame with no homography cannot be warped into another
+    # frame's plane; it can only be left out of the plate.
+    if i >= len(Hs) or Hs[i] is None:
+        return frames[i].copy()
+    idx = [j for j in idx if j < len(Hs) and Hs[j] is not None]
     if not idx:
         return frames[i].copy()
 
