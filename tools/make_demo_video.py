@@ -9,6 +9,21 @@ requirement without anybody having to record themselves.
 
     python tools/make_demo_video.py -o demo.mp4
 
+ADDING THE VOICE-OVER
+---------------------
+The picture follows the voice, not the other way round: DURATIONS below is set
+so the cut lands on the length of the recorded read. To remix after a re-record,
+measure the new take, adjust DURATIONS, rebuild, then:
+
+    ffmpeg -i vo.m4a -ac 1 -ar 48000 vo_raw.wav
+    ffmpeg -i vo_raw.wav -af "highpass=f=85,afftdn=nr=12:nf=-32,deesser=i=0.4,      equalizer=f=220:t=q:w=1.2:g=-2,equalizer=f=3200:t=q:w=1.4:g=2.5,      acompressor=threshold=-20dB:ratio=3:attack=8:release=180:makeup=2,      loudnorm=I=-16:TP=-1.5:LRA=9" vo_clean.wav
+    ffmpeg -i silent.mp4 -i vo_clean.wav -map 0:v -map 1:a -c:v copy       -c:a aac -b:a 192k -shortest out.mp4
+
+The chain is: rumble out at 85Hz, a light FFT denoise, de-ess, a small cut at
+220Hz where a close mic gets boxy, a small lift at 3.2kHz for consonants, gentle
+compression, then normalise to -16 LUFS. YouTube normalises to -14, so anything
+much louder than this only loses headroom.
+
 WHY A SCRIPT AND NOT AN EDITOR
 ------------------------------
 Because the numbers on screen have to stay true. A cut assembled by hand drifts
@@ -152,6 +167,23 @@ def caption(img, lines, y=None, small=False):
     return img
 
 
+# How long each scene runs, in seconds. These exist because the cut has to fit a
+# voice-over: the silent version was 103s and the read is 164s, so the picture
+# follows the voice rather than the other way round. Footage scenes are capped by
+# how much footage there actually is -- the gym master is 799 frames, which is
+# 26.6s at 30fps and no more.
+DURATIONS = {
+    "scene_title": 16.0,
+    "scene_refusal": 17.0,
+    "scene_conversion": 26.4,
+    "scene_feeds": 20.0,
+    "scene_lines": 16.0,
+    "scene_settle": 15.0,
+    "scene_ledger": 30.0,
+    "scene_close": 23.0,
+}
+
+
 def place_logo(img: Image.Image, xy, box):
     """
     Composite the wordmark, honouring its alpha.
@@ -180,7 +212,7 @@ def scene_title(reel):
          "Converting a film to a 270\u00b0 format takes about two months per title.\n"
          "Even then only part of it gets converted \u2014 Bohemian Rhapsody got 43\n"
          "minutes of 134.", F(38), DIM)
-    reel.hold(img, 4.5)
+    reel.hold(img, DURATIONS['scene_title'] * 0.42)
 
     img = canvas()
     d = ImageDraw.Draw(img)
@@ -194,7 +226,7 @@ def scene_title(reel):
          "That question is geometry. It is cheap.\n"
          "Answering it first is the difference between 43 minutes and the film.",
          F(36), BLUE)
-    reel.hold(img, 5.5)
+    reel.hold(img, DURATIONS['scene_title'] * 0.58)
 
 
 def scene_refusal(reel):
@@ -228,7 +260,7 @@ def scene_refusal(reel):
     text(d, (110, 880),
          "Same motion classifier, geometry probe and gate a real render uses \u2014\n"
          "so a shot it clears is one a render will clear.", F(32), DIM)
-    reel.hold(img, 4.0)
+    reel.hold(img, max(1.0, DURATIONS['scene_refusal'] - 6.6))
 
 
 def scene_conversion(reel):
@@ -237,7 +269,8 @@ def scene_conversion(reel):
     frames = read_clip(src)
     if not frames:
         return
-    band = frames[40:40 + 620] or frames
+    want = int(DURATIONS['scene_conversion'] * FPS)
+    band = frames[max(0, len(frames) - want):][:want] or frames
 
     for i, f in enumerate(band):
         img = np.full((H, W, 3), BG[::-1], np.uint8)
@@ -269,9 +302,11 @@ def scene_lines(reel):
     new = read_clip(ROOT / "jobs" / "gym_hd" / "deliverable" / "master_widened.mp4")
     if not old or not new:
         return
-    o = old[150:150 + 340]
+    want = int(DURATIONS['scene_lines'] * FPS)
+    lo = max(0, min(120, len(old) - want))
+    o = old[lo:lo + want]
     n = [cv2.resize(f, (690, 270), interpolation=cv2.INTER_AREA)
-         for f in new[150:150 + 340]]
+         for f in new[lo:lo + want]]
     ww, Y0, Y1, Z = 105, 30, 215, 3
 
     for i, (a, b) in enumerate(zip(o, n)):
@@ -304,8 +339,10 @@ def scene_feeds(reel):
     R = read_clip(d / "right.mp4")
     if not (L and C and R):
         return
-    n = min(len(L), len(C), len(R), 430)
-    for i in range(40, n):
+    want = int(DURATIONS['scene_feeds'] * FPS)
+    n = min(len(L), len(C), len(R))
+    start = max(0, min(40, n - want))
+    for i in range(start, min(n, start + want)):
         img = np.full((H, W, 3), BG[::-1], np.uint8)
         c = fit(C[i], 1080, 560)
         l = fit(L[i], 250, 560)
@@ -360,7 +397,7 @@ def scene_settle(reel):
     text(dr, (110, 878),
          "640px of a 1024px source, and 200 frames of a 799-frame take.",
          F(32), DIM)
-    reel.hold(img, 9.0)
+    reel.hold(img, DURATIONS['scene_settle'])
 
 
 def scene_ledger(reel):
@@ -373,7 +410,7 @@ def scene_ledger(reel):
          "across everything we own,\nwhat converts without inventing anything?",
          F(56, True), FG)
     text(d, (110, 480), "That is a query. So refused shots have to be rows.", F(36), BLUE)
-    reel.hold(img, 4.5)
+    reel.hold(img, DURATIONS['scene_ledger'] * 0.27)
 
     lines = [
         ("> Query the ledger. Which source has the highest", FG),
@@ -395,7 +432,7 @@ def scene_ledger(reel):
          F(30), DIM)
     for i, (t, c) in enumerate(lines):
         text(d, (110, 175 + i * 52), t, MONO(34), c)
-    reel.hold(img, 7.0)
+    reel.hold(img, DURATIONS['scene_ledger'] * 0.40)
 
     img2 = img.copy()
     d = ImageDraw.Draw(img2)
@@ -405,7 +442,7 @@ def scene_ledger(reel):
     text(d, (110, 920),
          "A ledger of successes answers \"what did we convert\".\n"
          "It never answers \"what could we have\".", F(32), DIM)
-    reel.hold(img2, 5.0)
+    reel.hold(img2, DURATIONS['scene_ledger'] * 0.33)
 
 
 def scene_close(reel):
@@ -428,7 +465,7 @@ def scene_close(reel):
         text(d, (620, 690 + i * 58), v, F(36, True), GREEN)
     text(d, (900, 690), "three rooms, three days,\nCPU only, no model involved",
          F(32), DIM)
-    reel.hold(img, 6.5)
+    reel.hold(img, DURATIONS['scene_close'] * 0.55)
 
     img = canvas()
     d = ImageDraw.Draw(img)
@@ -438,7 +475,7 @@ def scene_close(reel):
     text(d, (110, 650), "frameflow-460687416455.us-central1.run.app", F(36), BLUE)
     text(d, (110, 710), "github.com/NebByte/frameflow", F(36), BLUE)
     text(d, (110, 830), "642 checks \u00b7 Apache-2.0", F(30), DIM)
-    reel.hold(img, 5.0)
+    reel.hold(img, DURATIONS['scene_close'] * 0.45)
 
 
 SCENES = [scene_title, scene_refusal, scene_conversion, scene_feeds,
