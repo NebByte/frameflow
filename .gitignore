@@ -51,3 +51,6 @@ media/drone.mp4
 # The Devpost draft. It carries the entrant email and reads as scaffolding
 # ("copy from here", "link to add") rather than as part of the product.
 docs/SUBMISSION.md
+
+# clickhousectl writes an admin API secret here, inside the project dir.
+.clickhouse/
