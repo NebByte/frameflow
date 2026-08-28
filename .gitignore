@@ -54,3 +54,6 @@ docs/SUBMISSION.md
 
 # clickhousectl writes an admin API secret here, inside the project dir.
 .clickhouse/
+
+# The built video. Regenerate with: python tools/make_demo_video.py
+frameflow_demo_video.mp4
