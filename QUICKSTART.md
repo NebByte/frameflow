@@ -76,7 +76,7 @@ python server.py     # agent on :8080/dev-ui/ , studio on :8080/studio/
 ```
 frameflow/     the pipeline
 agent_service/ the ADK agent and its tools
-tests/         642 checks across 11 suites
+tests/         651 checks across 11 suites
 tools/         synthetic footage, ground-truth validation, GPU checks
 results/       contact sheets, reports, per-shot measurements
 samples/       one finished conversion, seeded into jobs/ on first run
