@@ -254,7 +254,3 @@ its own, and each is a standalone finding in the
 ## Licence
 
 Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-Chosen over MIT for the express patent grant and defensive termination: if
-someone sues over patents in this code, their licence to it ends. MIT is silent
-on patents entirely.
