@@ -1,4 +1,4 @@
-/* ScreenX Studio -- operator shell.
+/* Frameflow Studio -- operator shell.
  *
  * Vanilla ES modules on purpose: no build step, so the repo stays
  * `python app.py` and two dependencies.
@@ -249,7 +249,7 @@ function options() {
 function showCommand() {
   if (!state.file) return;
   const o = options();
-  const parts = ["python screenx_render.py", state.file.name,
+  const parts = ["python render.py", state.file.name,
                  "-o jobs/" + (state.job || "…"),
                  "--maxw " + o.maxw, "--frames-per-shot " + o.frames_per_shot];
   if (o.max_shots !== "0") parts.push("--max-shots " + o.max_shots);

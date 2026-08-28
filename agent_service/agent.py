@@ -35,7 +35,7 @@ from google.adk.agents import LlmAgent
 
 from . import tools
 
-MODEL = os.environ.get("SCREENX_AGENT_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("FRAMEFLOW_AGENT_MODEL", "gemini-2.5-flash")
 
 INSTRUCTION = """
 You are the conversion supervisor for a 270-degree cinema pipeline (the ScreenX
@@ -101,7 +101,7 @@ def _clickhouse_toolset():
     not be blocked by a missing database, and the instruction tells the model
     what to say if the ledger is unavailable.
     """
-    import ledger
+    from frameflow import ledger
     cfg = ledger.settings()
     if cfg is None:
         return None
@@ -148,7 +148,7 @@ def build_agent():
         note = note or " (ledger unavailable: no ClickHouse credentials set)"
 
     return LlmAgent(
-        name="screenx_supervisor",
+        name="frameflow_supervisor",
         model=MODEL,
         description="Decides which shots of a film can be widened to 270 "
                     "degrees from their own footage, converts them, and keeps "

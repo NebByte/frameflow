@@ -30,3 +30,8 @@ media/pano_flat.png
 
 # Personal source footage. Synthetic clips are enough to run everything.
 media/gym_pan.mp4
+
+# build artefacts
+*.egg-info/
+build/
+dist/

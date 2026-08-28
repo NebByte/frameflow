@@ -1,5 +1,5 @@
 """
-ScreenX Studio -- one interface over the whole toolkit.
+Frameflow Studio -- one interface over the whole toolkit.
 
     python app.py                 # http://localhost:8420
     python app.py --local         # bind 127.0.0.1 only
@@ -7,7 +7,7 @@ ScreenX Studio -- one interface over the whole toolkit.
 
 WHY THIS REPLACED THREE FRONT DOORS
 -----------------------------------
-There used to be `screenx_render.py` (18 flags), `demo.py` (11 of them) and
+There used to be `render.py` (18 flags), `demo.py` (11 of them) and
 `serve.py` (5 of demo's). Each layer quietly dropped capability, so the browser
 could not reach the 3D path, a second cut, the context layer or the reasoning
 step at all. This exposes the render surface directly and loses nothing.
@@ -16,7 +16,7 @@ WHAT IT DOES NOT DO
 -------------------
 It does not import the pipeline. `serve.py` shelled out on purpose -- "so the
 browser and the CLI cannot drift apart" -- and that is still right: a render
-that dies takes a subprocess with it and not the server, and `screenx_render.py`
+that dies takes a subprocess with it and not the server, and `render.py`
 stays the single implementation of what a run means. The one thing gained over
 scraping stdout is `--progress-json`, which hands back the per-shot record
 itself rather than a line of text to be parsed back apart.
@@ -78,7 +78,7 @@ def capabilities() -> dict:
 
     why = "no CUDA device visible"
     try:
-        import backends as bk
+        from frameflow import backends as bk
         cuda = bool(bk.GaussianBackend.available())
     except Exception as e:
         # Keep why it failed. This used to capture the exception and then
@@ -90,7 +90,7 @@ def capabilities() -> dict:
                        enables=["prefer_3d"])
 
     try:
-        import sfm
+        from frameflow import sfm
         colmap = bool(sfm.colmap_available())
     except Exception:
         colmap = False
@@ -103,7 +103,8 @@ def capabilities() -> dict:
                           enables=["web_encode"])
 
     ws = bool(KEYS.get("WAVESPEED_API_KEY") or os.environ.get("WAVESPEED_API_KEY")
-              or os.environ.get("SCREENX_TOKEN"))
+              or os.environ.get("FRAMEFLOW_TOKEN")
+              or os.environ.get("SCREENX_TOKEN"))   # pre-rename name still read
     caps["wavespeed"] = dict(ok=ws, label="WaveSpeed outpainter",
                              reason="" if ws else "paste a key below, or set "
                                                   "WAVESPEED_API_KEY",
@@ -111,7 +112,7 @@ def capabilities() -> dict:
                              wants_key="WAVESPEED_API_KEY")
 
     try:
-        import colabrun
+        from frameflow import colabrun
         cb = colabrun.available()
     except Exception as e:
         cb = dict(ok=False, reason=f"{type(e).__name__}")
@@ -120,7 +121,7 @@ def capabilities() -> dict:
 
     gem, why = False, "no credential"
     try:
-        import gemini
+        from frameflow import gemini
         if os.environ.get("GEMINI_API_KEY"):
             gem, why = True, ""
         elif gemini.adc_project():
@@ -254,10 +255,10 @@ def build_argv(clip: Path, outdir: Path, opts: dict) -> list:
 
     Kept as one pure function so a test can assert the UI produces the same argv
     as the documented CLI line, rather than the two drifting the way demo.py and
-    screenx_render.py did.
+    render.py did.
     """
     o = clamp(opts)
-    argv = [sys.executable, "-u", str(HERE / "screenx_render.py"), str(clip),
+    argv = [sys.executable, "-u", "-m", "frameflow.render", str(clip),
             "-o", str(outdir), "--maxw", str(o["maxw"]),
             "--frames-per-shot", str(o["frames_per_shot"]),
             "--progress-json"]
@@ -333,7 +334,7 @@ def run_remote(job: dict, clip: Path, opts: dict):
     machine that cannot honour them -- a 3D run silently served by the CPU path
     would look like a result and prove nothing.
     """
-    import colabrun as cr
+    from frameflow import colabrun as cr
     outdir = Path(job["dir"])
     scratch = outdir / "remote"
     log = job["log"].append
@@ -485,7 +486,7 @@ def run_polish(job: dict, repair: str | None, shots: str = "",
     figure would be reporting pixels as filmed that a model drew a minute ago.
     """
     d = Path(job["dir"])
-    argv = [sys.executable, str(HERE / "polish.py"), str(d)]
+    argv = [sys.executable, "-m", "frameflow.polish", str(d)]
     # The settle pass runs unless it is explicitly waived. It is free, calls
     # nothing hosted, invents no pixel and cannot move the real-wing figure --
     # so there is no version of "finish this film" where skipping it by default
@@ -904,8 +905,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "no such job"}, 404)
         try:
             import cv2
-            import shotdetect as sd
-            import wingcoverage as wc
+            from frameflow import shotdetect as sd
+            from frameflow import wingcoverage as wc
             path = job["clip"]
             seg = sd.segment(path)
             shots = [t for t in seg["shots"] if t[1] - t[0] >= 12]
@@ -1051,7 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         A human pinning what belongs off-frame in one shot.
 
-        context.DirectionStore has always persisted these and screenx_render
+        context.DirectionStore has always persisted these and render
         reads them on every run -- there has simply never been a way to write
         one. Pixels driven by a note are labelled DIRECTED, which is outside
         PHOTOGRAPHIC: someone who knows the place is still not a camera.
@@ -1065,7 +1066,7 @@ class Handler(BaseHTTPRequestHandler):
         if shot is None or not text:
             return self._json({"error": "shot and text required"}, 400)
         try:
-            import context as cx
+            from frameflow import context as cx
             store = cx.DirectionStore(Path(JOBS_DIR / jid))
             store.add(int(shot), text, body.get("author") or "operator")
             store.save()
@@ -1090,7 +1091,7 @@ def lan_addresses():
 
 def main():
     global TOKEN
-    ap = argparse.ArgumentParser(description="ScreenX Studio")
+    ap = argparse.ArgumentParser(description="Frameflow Studio")
     ap.add_argument("-p", "--port", type=int, default=8420)
     ap.add_argument("--host", default=None)
     ap.add_argument("--local", action="store_true", help="bind 127.0.0.1 only")
@@ -1104,7 +1105,7 @@ def main():
     srv = ThreadingHTTPServer((host, a.port), Handler)
 
     url = f"http://localhost:{a.port}/" + (f"?t={TOKEN}" if TOKEN else "")
-    print(f"ScreenX Studio on {url}")
+    print(f"Frameflow Studio on {url}")
     if host == "0.0.0.0":
         for ip in lan_addresses():
             print(f"  on this network: http://{ip}:{a.port}/"

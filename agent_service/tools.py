@@ -4,7 +4,7 @@ tools -- what the agent is allowed to do.
 Every one of these is a thin wrapper over code that already exists and is
 already tested. That is deliberate: an agent that reimplements the pipeline
 inside its own tool layer is an agent whose numbers nobody has checked. The
-measurements a tool returns are the same objects `screenx_render`, `gating`
+measurements a tool returns are the same objects `render`, `gating`
 and `polish` produce on the command line, and if the two ever disagree the
 tests catch it, not a demo.
 
@@ -107,7 +107,7 @@ def triage_film(video: str, max_shots: int = 0, working_width: int = 480) -> dic
     if path is None:
         return _fail(f"no such film: {video}", hint="call list_films first")
     try:
-        import triage as tr
+        from frameflow import triage as tr
         rep = tr.triage_film(str(path), maxw=int(working_width),
                              max_shots=int(max_shots) or None, verbose=False)
         return dict(ok=True, **rep)
@@ -150,7 +150,7 @@ def render_film(video: str, working_width: int = 480, frames_per_shot: int = 200
 
     def work():
         try:
-            import screenx_render as sx
+            from frameflow import render as sx
             sx.run(str(path), outdir=str(outdir), maxw=int(working_width),
                    max_shots=int(max_shots) or None,
                    frames_per_shot=int(frames_per_shot),
@@ -211,7 +211,7 @@ def inspect_walls(job: str) -> dict:
     if not (d / "screenx_summary.json").exists():
         return _fail(f"no rendered job at {d}")
     try:
-        import polish
+        from frameflow import polish
         rep = polish.inspect(str(d), vision=lambda *a, **k: [], verbose=False)
         return dict(ok=True, job=job, findings=rep.get("findings"),
                     faulted=rep.get("repairable"))
@@ -235,7 +235,7 @@ def settle_walls(job: str) -> dict:
     if not (d / "screenx_summary.json").exists():
         return _fail(f"no rendered job at {d}")
     try:
-        import polish
+        from frameflow import polish
         done = polish.settle(str(d), verbose=False)
         return dict(ok=True, job=job, settled=done,
                     note="nothing was invented; mean_real_wing is unchanged")
@@ -261,7 +261,7 @@ def record_run(job: str) -> dict:
     if not (d / "screenx_summary.json").exists():
         return _fail(f"no rendered job at {d}")
     try:
-        import ledger
+        from frameflow import ledger
         run_id, n = ledger.write_run(str(d), verbose=False)
         return dict(ok=True, job=job, run_id=run_id, rows=n)
     except Exception as e:
@@ -275,7 +275,7 @@ def ledger_examples() -> dict:
     Useful when the user asks what can be queried, or when composing a new
     question and you want to see the column names in context.
     """
-    import ledger
+    from frameflow import ledger
     return dict(ok=True, table=ledger.TABLE,
                 columns=list(ledger.COLUMNS),
                 examples={k: v for k, v in ledger.EXAMPLES.items()})

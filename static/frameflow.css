@@ -1,0 +1,440 @@
+/* Frameflow Studio -- the design system.
+ *
+ * Shared by the operator app and the published showcase so they cannot drift.
+ *
+ * The reference is the software this audience already lives in: Resolve,
+ * Baselight, Nuke. Near-black neutral chrome, desaturated UI so the footage is
+ * the only saturated thing on screen (a tinted interface biases how an image
+ * reads, which matters when the judgement being made is about pixels), dense
+ * tabular data, monospace numerals, panels rather than cards.
+ *
+ * No shadows, no gradients, no rounded cards, no emoji. 1px rules do the
+ * separating.
+ */
+
+:root {
+  --bg:        #141618;
+  --panel:     #1b1e21;
+  --panel-2:   #202428;
+  --line:      #2a2f34;
+  --line-soft: #22262a;
+  --ink:       #e6e9ec;
+  --ink-dim:   #8b949c;
+  --ink-faint: #626a72;
+  --accent:    #e8913a;
+  --real:      #4da3a3;
+  --invented:  #c2557a;
+  --warn:      #d8a13c;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+          "Liberation Mono", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+}
+
+/* The viewer's theme must not repaint an instrument. A light background would
+ * change how every frame in here looks, which is the one thing this UI exists
+ * to judge. Stated deliberately rather than by omission. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.5 var(--ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+body { overflow-x: hidden; }
+
+/* ---------------------------------------------------------------- structure */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+  min-width: 0;
+}
+
+/* A grid item's automatic minimum size is min-content, not zero, so one
+ * unshrinkable descendant widens the whole track and every sibling stretches
+ * with it. Same reason .panel carries min-width: 0. */
+.app > * { min-width: 0; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  height: 44px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--ink);
+}
+.brand span { color: var(--ink-faint); font-weight: 400; }
+
+.stages { display: flex; gap: 2px; margin-left: auto; }
+
+/* A five-tab bar is 375px before the wordmark, so on a phone the topbar forced
+ * the whole grid wider than the viewport and every panel inherited it. The tab
+ * strip scrolls inside itself instead -- clipping the page with overflow
+ * hidden would have hidden the symptom and kept the broken layout. */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 44px; gap: 8px; padding: 6px 12px; }
+  /* the wordmark plus its qualifier cannot shrink, and pinned the topbar 9px
+   * past a 390px viewport on its own */
+  .brand { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+           white-space: nowrap; }
+  .brand span { display: none; }
+  .stages {
+    margin-left: 0;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .stages::-webkit-scrollbar { display: none; }
+  .stage { padding: 10px 11px 8px; flex: 0 0 auto; }
+  .workspace { padding: 10px; }
+}
+
+.stage {
+  font: 500 11px/1 var(--ui);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 14px 14px 12px;
+  cursor: pointer;
+}
+.stage:hover { color: var(--ink-dim); }
+.stage[aria-current="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.stage[disabled] { color: #3d444a; cursor: not-allowed; }
+
+.workspace { padding: 14px; display: grid; gap: 14px; align-content: start; }
+
+/* `display: grid` on a stage beats the browser's own [hidden] { display: none },
+ * so every stage rendered at once and the tabs did nothing. Only visible by
+ * looking at the page -- the markup and the JS were both correct. */
+.workspace[hidden] { display: none; }
+
+.cols { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 1100px) {
+  .cols-2 { grid-template-columns: 1.4fr 1fr; }
+  .cols-3 { grid-template-columns: 260px 1fr 300px; }
+}
+
+/* ---------------------------------------------------------------- panels */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  min-width: 0;                 /* so grid children may actually shrink */
+}
+
+.panel > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font: 500 11px/1 var(--ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.panel > header .right { margin-left: auto; color: var(--ink-faint); }
+.panel .body { padding: 12px; }
+.panel .body.flush { padding: 0; }
+
+/* ---------------------------------------------------------------- readouts */
+
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border-top: 1px solid var(--line-soft);
+}
+
+.readout {
+  padding: 12px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  min-width: 0;
+}
+.readout:last-child { border-right: 0; }
+
+.readout .k {
+  font: 500 10px/1 var(--ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.readout .v {
+  font: 400 22px/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  margin-top: 7px;
+  color: var(--ink);
+}
+.readout .v.small { font-size: 15px; }
+.readout .n { font-size: 11px; color: var(--ink-faint); margin-top: 4px; }
+.readout .v em { font-style: normal; color: var(--ink-faint); font-size: 13px; }
+
+/* ---------------------------------------------------------------- tables */
+
+.scroll { overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+
+th {
+  font: 500 10px/1 var(--ui);
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
+td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  color: var(--ink-dim);
+}
+td.n {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+}
+td.wrap { white-space: normal; min-width: 220px; color: var(--ink-faint); }
+tr.sel td { background: var(--panel-2); color: var(--ink); }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: #1f2327; }
+
+/* ---------------------------------------------------------------- verdicts */
+
+.verdict {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .08em;
+  padding: 3px 6px;
+  border: 1px solid currentColor;
+  display: inline-block;
+}
+/* Every state gets a rule. demo_ui had no class for BORROWED, so it silently
+ * rendered as OFF -- a new rung reading as a refusal is the worst direction for
+ * that bug to fail in. */
+.v-FULL     { color: var(--real); }
+.v-NARROW   { color: var(--real); opacity: .82; }
+.v-BORROWED { color: var(--accent); }
+.v-GEN      { color: var(--invented); }
+.v-OFF      { color: var(--ink-faint); }
+
+/* ---------------------------------------------------------------- provenance */
+
+.provbar {
+  display: flex;
+  height: 8px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.provbar i { display: block; height: 100%; }
+.provbar .real { background: var(--real); }
+.provbar .invented { background: var(--invented); }
+
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  flex-wrap: wrap;
+}
+.legend b {
+  font: 400 11px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+.swatch.real { background: var(--real); }
+.swatch.invented { background: var(--invented); }
+
+/* ---------------------------------------------------------------- controls */
+
+label.field {
+  display: grid;
+  gap: 5px;
+  font: 500 10px/1 var(--ui);
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 12px;
+}
+
+select, input[type="text"], input[type="number"], textarea {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 7px 8px;
+  font: 400 12px/1.3 var(--mono);
+  width: 100%;
+}
+select:focus, input:focus, textarea:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+textarea { font-family: var(--ui); resize: vertical; min-height: 60px; }
+
+/* A control and the button that acts on it, side by side on a wide screen and
+ * stacked when there is no room -- the select must never drag the page sideways. */
+.actionrow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.actionrow label.field { flex: 1 1 260px; min-width: 0; }
+
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.check:last-child { border-bottom: 0; }
+.check input { margin: 2px 0 0; accent-color: var(--accent); }
+.check.off { color: var(--ink-faint); cursor: not-allowed; }
+.check .why {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+button.go {
+  background: var(--accent);
+  color: #17191b;
+  border: 0;
+  padding: 9px 16px;
+  font: 600 11px/1 var(--ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  width: 100%;
+}
+button.go:disabled { background: #3a3f44; color: var(--ink-faint); cursor: not-allowed; }
+
+button.ghost {
+  background: none;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  padding: 6px 12px;
+  font: 500 11px/1 var(--ui);
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+button.ghost:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+details.advanced { border-top: 1px solid var(--line); margin-top: 12px; }
+details.advanced > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font: 500 10px/1 var(--ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  list-style: none;
+}
+details.advanced > summary::-webkit-details-marker { display: none; }
+details.advanced > summary::before { content: "+ "; }
+details.advanced[open] > summary::before { content: "- "; }
+
+/* ---------------------------------------------------------------- media */
+
+.frame {
+  background: #0d0f10;
+  border: 1px solid var(--line);
+  display: block;
+  width: 100%;
+  height: auto;
+}
+video.frame { max-height: 62vh; }
+
+.dropzone {
+  border: 1px dashed var(--line);
+  padding: 42px 20px;
+  text-align: center;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.dropzone.hot { border-color: var(--accent); color: var(--ink-dim); }
+.dropzone b { color: var(--ink); font-weight: 500; display: block; margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- log */
+
+pre.log {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 260px;
+  overflow: auto;
+  font: 11px/1.55 var(--mono);
+  color: var(--ink-faint);
+  background: #101214;
+  border-top: 1px solid var(--line-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre.log b { color: var(--ink-dim); font-weight: 400; }
+
+.note {
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.6;
+}
+.note strong { color: var(--ink-dim); font-weight: 500; }
+.warn { color: var(--warn); }
+
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  font-size: 11px;
+}
+.kv dt { color: var(--ink-faint); }
+.kv dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.empty { padding: 30px 12px; text-align: center; color: var(--ink-faint); font-size: 12px; }
+
+/* A settled measurement is shown as a movement -- "2.3% -> 0.4%" -- because
+   the pass changes no headline number, so the before is the only thing that
+   makes the after mean anything. The arrow carries no information itself. */
+.dim { color: var(--ink-dim); }

@@ -1,16 +1,18 @@
 <div align="center">
 
-# Which shots can we earn?
+<img src="docs/img/logo.png" width="420" alt="Frameflow">
+
+### Which shots can we earn?
 
 **An agent that triages a film for 270° immersive conversion, recovers the side
 walls from the footage itself, and never lies about what it invented.**
 
-[![live demo](https://img.shields.io/badge/demo-live-3fb950?style=flat-square)](https://screenx-agent-460687416455.us-central1.run.app)
+[![live demo](https://img.shields.io/badge/demo-live-3fb950?style=flat-square)](https://frameflow-460687416455.us-central1.run.app)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-58a6ff?style=flat-square)](https://cloud.google.com/vertex-ai)
 [![Agent Builder](https://img.shields.io/badge/Google%20Cloud-Agent%20Builder-4285F4?style=flat-square)](https://cloud.google.com/products/agent-builder)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-MCP-a371f7?style=flat-square)](https://github.com/ClickHouse/mcp-clickhouse)
 [![licence](https://img.shields.io/badge/licence-MIT-6e7681?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/checks-234%20passing-3fb950?style=flat-square)](#tests)
+[![checks](https://img.shields.io/badge/checks-106%20passing-3fb950?style=flat-square)](#tests)
 
 Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) — ClickHouse track.
 
@@ -25,10 +27,10 @@ recovered from this camera's own pan** — 90.4% genuinely photographed, nothing
 
 ## The problem
 
-ScreenX puts a film on three walls instead of one. Converting a film to it takes
-**about two months per title** — two to three weeks moving assets, four or more
-weeks of CG, two weeks of QC. Even then only part of a film gets converted:
-*Bohemian Rhapsody* got 43 minutes of 134.
+The ScreenX format puts a film on three walls instead of one. Converting a film
+to it takes **about two months per title** — two to three weeks moving assets,
+four or more weeks of CG, two weeks of QC. Even then only part of a film gets
+converted: *Bohemian Rhapsody* got 43 minutes of 134.
 
 The labour is artists pulling frames from alternate takes and B-roll and
 rotoscoping them into the side panels. Wikipedia is blunt about the consequence
@@ -74,7 +76,7 @@ shot, so a render recovers more, never less. Understating costs you a shot you
 could have had. Overstating costs you the artist-month you committed on the
 strength of it.
 
-## What came out
+## What comes out
 
 <div align="center">
 <img src="docs/img/walls-before-after.gif" width="620" alt="Side-by-side loop of the same recovered wall. Before: thin black lines run down it. After: they are gone.">
@@ -101,7 +103,7 @@ Three real rooms, three different days, CPU only, no model involved:
 | apartment walk | up to 99.3% |
 | gym pan, 1024px, whole take | **90.4%** |
 
-## The line this refuses to blur
+## The line Frameflow refuses to blur
 
 Every pixel in a side wall is either **photographed** or **invented**:
 
@@ -118,7 +120,7 @@ repaints something that number falls by exactly the repainted share, and the
 per-pixel provenance map on disk is rewritten to match.
 
 **A refusal is a real answer.** `OFF` and `LOCKED` shots mean the camera never
-filmed anything out there, and the tool says so rather than inventing something
+filmed anything out there, and Frameflow says so rather than inventing something
 and calling it a conversion.
 
 ## Why ClickHouse is load-bearing
@@ -132,7 +134,7 @@ SELECT source,
        count()                                          AS shots,
        countIf(state IN ('FULL','NARROW','BORROWED'))   AS earned,
        round(avg(photographic), 4)                      AS mean_real_wing
-FROM screenx_shots
+FROM frameflow_shots
 GROUP BY source
 ORDER BY earned DESC
 ```
@@ -153,14 +155,14 @@ somebody guessed in advance.
 
 ```bash
 pip install -r requirements.txt
-python make_test_clip.py                  # synthetic clips, known ground truth
+python tools/make_test_clip.py                  # synthetic clips, known truth
 
-python triage.py media/pan_flat.mp4       # earned
-python triage.py media/locked_off.mp4     # refused — and cheap to learn
+python -m frameflow.triage media/pan_flat.mp4   # earned
+python -m frameflow.triage media/locked_off.mp4 # refused — and cheap to learn
 
-python screenx_render.py media/pan_flat.mp4 -o jobs/demo --deliver
-python polish.py jobs/demo                # settle the walls; free
-python app.py                             # the studio, on :8420
+python -m frameflow.render media/pan_flat.mp4 -o jobs/demo --deliver
+python -m frameflow.polish jobs/demo            # settle the walls; free
+python app.py                                   # Frameflow Studio, on :8420
 ```
 
 <details>
@@ -170,7 +172,7 @@ python app.py                             # the studio, on :8420
 gcloud auth application-default login
 export GOOGLE_GENAI_USE_VERTEXAI=TRUE
 export GOOGLE_CLOUD_PROJECT=your-project GOOGLE_CLOUD_LOCATION=us-central1
-python server.py            # agent on :8080/dev-ui/ , studio on :8080/studio/
+python server.py     # agent on :8080/dev-ui/ , studio on :8080/studio/
 ```
 </details>
 
@@ -179,8 +181,8 @@ python server.py            # agent on :8080/dev-ui/ , studio on :8080/studio/
 
 ```bash
 export CLICKHOUSE_HOST=... CLICKHOUSE_USER=... CLICKHOUSE_PASSWORD=...
-python ledger.py --write jobs/demo
-python ledger.py --examples
+python -m frameflow.ledger --write jobs/demo
+python -m frameflow.ledger --examples
 ```
 
 Without it everything else still runs, and the agent says the ledger is not
@@ -192,34 +194,16 @@ connected rather than answering catalogue questions from a single job.
 
 ```bash
 pip install -r requirements.txt -r requirements-gpu.txt
-python verify_gpu.py        # checks the CUDA path against known 3D truth
+python tools/verify_gpu.py   # checks the CUDA path against known 3D truth
 ```
 </details>
-
-## What is still broken
-
-**Depth.** A single homography cannot place off-plane content, so a recovered
-wall can repeat signage that is still on screen in the centre — measured at 3.0%
-of wall patches. `GaussianBackend` reconstructs the scene properly and is
-written; it needs CUDA and *refuses to fall back* rather than putting homography
-pixels behind a 3D label.
-
-We tried the cheap fix and threw it away: rerouting the clip to a layered
-backend changed the seam metric not at all (1.88× both ways), dropped hold-out
-geometry from 32.4 to 29.2 dB, and added a warped corner. The negative result is
-[in the log](docs/RESEARCH-LOG.md).
-
-**Nobody has seen any of this in a theatre.** Every number here was measured at
-1:1 on a monitor — the harshest possible condition for content watched at 40°
-off-axis in a dark room. No measurement substitutes for that test.
 
 ## Tests
 
 ```bash
-python test_agent_service.py     # 44 — agent, ledger, triage
-python test_polish.py            # 62 — the finishing pass
-python test_e2e.py               # 52 — the joins, which is where bugs live
-python -m pytest -q              # 76 — everything else
+python -m pytest tests -q          # 106
+python tests/test_e2e.py           # the joins, which is where bugs live
+python tests/test_polish.py        # the finishing pass, with readable output
 ```
 
 `test_e2e.py` writes its fixture at **30fps deliberately**, because a 24fps
@@ -228,22 +212,26 @@ out a quarter slow pass the whole suite.
 
 ## Layout
 
-| | |
-|---|---|
-| `triage.py` | verdicts without rendering |
-| `ledger.py` | the ClickHouse schema and writer |
-| `agent_service/` | the ADK agent and its tools |
-| `server.py` | agent + studio on one port |
-| `screenx_render.py` | the conversion pipeline |
-| `wingcoverage.py` | propagation, settling, coverage metrics |
-| `gating.py` | the hold-out geometry probe and the gate |
-| `polish.py` | inspect, settle, and aimed repaint |
-| `walls.py` | auditorium geometry |
-| `backends.py` | mosaic · layered · gaussian |
-| [`docs/RESEARCH-LOG.md`](docs/RESEARCH-LOG.md) | how each of these was arrived at, negative results included |
+```
+frameflow/          the pipeline
+  triage.py           verdicts without rendering
+  render.py           the conversion pipeline
+  wingcoverage.py     propagation, settling, coverage metrics
+  gating.py           the hold-out geometry probe and the gate
+  polish.py           inspect, settle, and aimed repaint
+  backends.py         mosaic · layered · gaussian
+  walls.py            auditorium geometry
+  ledger.py           the ClickHouse schema and writer
+agent_service/      the ADK agent and its tools
+tests/              106 checks
+tools/              synthetic footage, ground-truth validation, GPU checks
+app.py              Frameflow Studio
+server.py           agent + studio on one port
+```
 
-Flat by design: every module runs on its own, and each is a standalone finding
-in the log.
+Inside `frameflow` the modules are peers rather than a hierarchy: each runs on
+its own, and each is a standalone finding in the
+[research log](docs/RESEARCH-LOG.md).
 
 ## Licence
 

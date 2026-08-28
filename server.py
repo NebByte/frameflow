@@ -82,10 +82,10 @@ def build():
         that path itself before it reaches the container, so the route existed
         in the OpenAPI schema and returned Google's own 404 in production.
         """
-        import ledger
+        from frameflow import ledger
         return JSONResponse(dict(
             ok=True,
-            agent="screenx_supervisor",
+            agent="frameflow_supervisor",
             ledger="configured" if ledger.settings() else "not configured",
             studio_port=STUDIO_PORT,
         ))

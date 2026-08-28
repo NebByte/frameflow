@@ -1,11 +1,11 @@
 [project]
-name = "screenx-toolkit"
-version = "0.3.0"
+name = "frameflow"
+version = "0.4.0"
 description = "Triage a film for 270-degree immersive conversion, recover the side walls from its own footage, and never lie about what was invented."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = ["screenx", "immersive", "cinema", "provenance", "gemini", "adk", "clickhouse"]
+keywords = ["frameflow", "screenx", "immersive", "cinema", "provenance", "gemini", "adk", "clickhouse"]
 
 dependencies = [
     "opencv-python-headless>=4.9",
@@ -24,25 +24,18 @@ gpu = ["torch>=2.2", "gsplat>=1.0"]
 generative = ["diffusers>=0.27", "transformers>=4.40", "accelerate>=0.30", "Pillow>=10.0"]
 
 [project.urls]
-Homepage = "https://github.com/NebByte/screenx-toolkit"
+Homepage = "https://github.com/NebByte/frameflow"
 Demo = "https://screenx-agent-460687416455.us-central1.run.app"
 
 [project.scripts]
-screenx-triage = "triage:main"
+frameflow-triage = "frameflow.triage:main"
 
-# Flat layout, deliberately. Every module is a peer that can be run on its own
-# -- `python triage.py clip.mp4`, `python polish.py jobs/x` -- and the research
-# log documents each as a standalone finding. Packaging them under a src/ tree
-# would buy an import namespace and cost the thing that makes them legible.
+# One package for the pipeline, one for the agent that drives it. Inside
+# `frameflow` the modules are peers rather than a hierarchy: each runs on its
+# own (`python -m frameflow.triage clip.mp4`) and each is a standalone finding
+# in the research log, which is what makes them legible.
 [tool.setuptools]
-py-modules = [
-    "wingcoverage", "backends", "gating", "screenx_render", "walls",
-    "triage", "polish", "ledger", "server", "agent", "director",
-    "fill", "provenance", "context", "reasoning", "offscreen", "splat",
-    "sfm", "shotdetect", "crosscut", "crossres", "filmindex", "fetchers",
-    "gemini", "wavespeed", "remote", "colabrun", "validate", "verify_gpu",
-    "make_test_clip",
-]
+packages = ["frameflow", "agent_service"]
 
 [tool.ruff]
 line-length = 88
@@ -61,7 +54,7 @@ select = ["F", "E9", "B"]
 ignore = ["B023", "B905", "E501"]
 
 [tool.pytest.ini_options]
-testpaths = ["."]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 # These suites also run standalone (`python test_polish.py`) and print a
 # readable pass/fail list, which is how the research log quotes them.
