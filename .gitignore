@@ -35,3 +35,15 @@ media/gym_pan.mp4
 *.egg-info/
 build/
 dist/
+
+# Rendered output from personal footage. Kept out of the repo deliberately;
+# samples/ carries a synthetic finished job instead. This was stripped from
+# history once, then re-added by a `git add -A` because the path was still
+# tracked -- an ignore rule does nothing for a tracked file.
+demos/
+
+# Wikimedia's Drone_flight_over_park.webm, CC BY-SA 4.0. Share-alike content
+# does not belong in an Apache-2.0 repository, and redistributing it without
+# attribution is a violation regardless. Fetch it yourself if you want it:
+#   https://commons.wikimedia.org/wiki/File:Drone_flight_over_park.webm
+media/drone.mp4
