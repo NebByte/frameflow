@@ -105,11 +105,28 @@ def build():
             studio_port=STUDIO_PORT,
         ))
 
+    @api.api_route("/static/{path:path}", methods=["GET", "HEAD"],
+                   include_in_schema=False)
+    async def studio_assets(path: str, request: Request):
+        """
+        The studio's own CSS and JS, at the path its HTML asks for.
+
+        index.html references /static/frameflow.css and /static/app.js -- root
+        absolute, because standalone the studio IS the root. Proxied under
+        /studio/ those requests go to the root app instead, which does not have
+        them, so the page rendered as unstyled HTML with no behaviour at all.
+        Rewriting the markup would break running `python app.py` directly, so
+        the root serves them instead.
+        """
+        return await _forward(request, f"/static/{path}")
+
     @api.api_route("/studio{path:path}",
                    methods=["GET", "POST", "PUT", "DELETE", "HEAD"])
     async def studio(path: str, request: Request):
         """Forward to the converter, streaming so large media does not buffer."""
-        target = path or "/"
+        return await _forward(request, path or "/")
+
+    async def _forward(request: Request, target: str):
         if not target.startswith("/"):
             target = "/" + target
         if request.url.query:

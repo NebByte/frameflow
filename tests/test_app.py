@@ -476,6 +476,39 @@ def test_polish_is_reachable_and_priced():
           "leaving the box empty" in js)
 
 
+def test_the_studio_assets_are_reachable_where_the_html_asks():
+    """
+    The bug that served the studio as unstyled HTML.
+
+    index.html references /static/frameflow.css and /static/app.js -- ROOT
+    absolute, which is correct when the studio is the root (`python app.py`).
+    Proxied under /studio/ in the deployed container, the browser still asks
+    for /static/..., which reached the agent app instead and 404'd. The page
+    loaded, looked like a raw document, and had no behaviour.
+
+    It survived a check because that check tested /studio/static/... -- the
+    path the proxy accepts, not the path the browser requests. So this asserts
+    the two agree.
+    """
+    print("")
+    print("the studio's assets are served where its html asks for them")
+    root = Path(app.HERE)
+    html = (root / "static" / "index.html").read_text(encoding="utf-8")
+    asked = sorted(set(re.findall(r'(?:src|href)="(/[^"]+)"', html)))
+    check("index.html asks for root-absolute assets", bool(asked), str(asked))
+
+    server_src = (root / "server.py").read_text(encoding="utf-8")
+    for ref in asked:
+        prefix = "/" + ref.strip("/").split("/")[0] + "/"
+        check(f"server.py forwards {prefix} to the studio",
+              f'"{prefix}{{path:path}}"' in server_src
+              or f"'{prefix}{{path:path}}'" in server_src,
+              ref)
+
+    for ref in asked:
+        check(f"{ref} exists on disk", (root / ref.lstrip("/")).is_file())
+
+
 if __name__ == "__main__":
     print("app -- the serving layer")
     test_safe_name()
@@ -494,6 +527,7 @@ if __name__ == "__main__":
     test_a_rehydrated_job_is_a_whole_job()
     test_every_id_is_unique()
     test_polish_is_reachable_and_priced()
+    test_the_studio_assets_are_reachable_where_the_html_asks()
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:
