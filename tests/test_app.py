@@ -109,10 +109,10 @@ def test_argv_parity():
     # the deliverable rides along by default now: the extended film is the
     # product, and a run that produced only a report was the old posture
     check("the cafe run rebuilds exactly, plus the deliverable",
-          argv[3:] == [str(clip), "-o", str(out), "--maxw", "640",
+          argv[4:] == [str(clip), "-o", str(out), "--maxw", "640",
                        "--frames-per-shot", "200", "--progress-json",
                        "--deliver", "deliverable"],
-          " ".join(argv[3:]))
+          " ".join(argv[4:]))
 
     argv = app.build_argv(clip, out, dict(sources="1", sfm="1", prefer_3d="1"))
     check("--sfm is given a directory, not a bare flag",
@@ -447,7 +447,10 @@ def test_polish_is_reachable_and_priced():
 
     # a repaint moves the headline down; a screen still showing the old figure
     # would report pixels as filmed that a model drew a minute ago
-    body = src.split("def run_polish")[1][:2200]
+    # to the end of the function, not a fixed character count: run_polish
+    # grew past 2200 chars and the check silently started reading only
+    # half of it
+    body = src.split("def run_polish")[1].split(chr(10) + "def ")[0]
     check("a repaired run re-reads its restated summary",
           ("af.summary_path" in body or "frameflow_summary" in body)
           and 'job["summary"]' in body)

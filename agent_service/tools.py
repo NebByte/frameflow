@@ -22,7 +22,15 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 JOBS = HERE / "jobs"
-MEDIA_DIRS = [HERE / "demos", HERE / "media", JOBS]
+# Source footage you can convert, and finished output you cannot.
+#
+# These were one list, and the agent duly offered to triage `left.mp4` -- a
+# 274-pixel-wide projector feed that is the RESULT of a conversion. Triaging a
+# side wall for side walls is nonsense, and an agent that offers it looks like
+# it does not know what its own outputs are.
+SOURCE_DIRS = [HERE / "media"]
+OUTPUT_DIRS = [HERE / "demos"]
+MEDIA_DIRS = SOURCE_DIRS + OUTPUT_DIRS + [JOBS]
 
 # Long renders run in a thread and report progress here rather than blocking a
 # chat turn for two hours.
@@ -50,18 +58,27 @@ def _resolve(video: str) -> Path | None:
 
 def list_films() -> dict:
     """
-    List the video files available to work on, and the finished jobs on disk.
+    List the source footage available to convert, the rendered examples, and
+    the finished jobs on disk.
 
-    Use this first when the user refers to a film by name rather than by path,
-    or when they ask what there is to look at.
+    Use this first when the user refers to a film by name rather than a path,
+    or asks what there is to look at.
+
+    `films` is what can be converted. `examples` are already-converted output --
+    three-panel masters and projector feeds. Never triage or render one of
+    those: they are the result of a conversion, so widening them again is
+    meaningless. Offer them as something to WATCH.
     """
-    films = []
-    for d in MEDIA_DIRS:
-        if not d.is_dir():
-            continue
-        for f in sorted(d.glob("*.mp4")):
-            films.append(dict(name=f.name, path=str(f),
-                              megabytes=round(f.stat().st_size / 1e6, 1)))
+    def scan(dirs):
+        out = []
+        for d in dirs:
+            if not d.is_dir():
+                continue
+            for f in sorted(d.glob("*.mp4")):
+                out.append(dict(name=f.name, path=str(f),
+                                megabytes=round(f.stat().st_size / 1e6, 1)))
+        return out
+
     jobs = []
     if JOBS.is_dir():
         for j in sorted(p for p in JOBS.iterdir() if p.is_dir()):
@@ -75,8 +92,14 @@ def list_films() -> dict:
             jobs.append(dict(job=j.name, source=d.get("source"),
                              shots=d.get("shots"),
                              mean_real_wing=d.get("mean_real_wing"),
+                             wings_on=d.get("wings_on"),
                              partial=bool(d.get("partial"))))
-    return dict(ok=True, films=films, jobs=jobs)
+    return dict(ok=True,
+                films=scan(SOURCE_DIRS),
+                examples=scan(OUTPUT_DIRS),
+                jobs=jobs,
+                note="films can be converted; examples are already converted "
+                     "output and must not be triaged or rendered again")
 
 
 # ------------------------------------------------------------------ the answer

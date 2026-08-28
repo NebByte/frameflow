@@ -8,3 +8,5 @@ __pycache__/
 .git/
 .claude/
 results/
+
+# samples/ is a finished job that ships, so /studio/ opens on something

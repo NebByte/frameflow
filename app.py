@@ -71,6 +71,36 @@ def _has(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
+def seed_jobs():
+    """
+    Put a finished conversion in front of a first-time visitor.
+
+    `jobs/` is generated output, so it is git-ignored and not in the image --
+    which meant the deployed Studio opened on an empty list. Someone arriving to
+    look at what this does had to upload a clip and wait through a render before
+    there was anything to see, which is a poor answer to "show me".
+
+    So one small finished job ships in `samples/` and is copied in on first
+    start. Copied, not symlinked, because the reviewer is meant to be able to
+    poke at it -- and never overwritten, so a real run of the same name wins.
+    """
+    src = HERE / "samples"
+    if not src.is_dir():
+        return []
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    placed = []
+    for job in sorted(p for p in src.iterdir() if p.is_dir()):
+        dest = JOBS_DIR / job.name
+        if dest.exists():
+            continue
+        try:
+            shutil.copytree(job, dest)
+            placed.append(job.name)
+        except OSError as e:
+            print(f"  sample {job.name} not seeded: {e}", flush=True)
+    return placed
+
+
 def capabilities() -> dict:
     """
     What this machine can do right now, with the reason when it cannot.
@@ -1116,6 +1146,8 @@ def main():
 
     TOKEN = a.token
     JOBS_DIR.mkdir(exist_ok=True)
+    for name in seed_jobs():
+        print(f"  seeded sample job: {name}", flush=True)
     host = a.host or ("127.0.0.1" if a.local else "0.0.0.0")
     srv = ThreadingHTTPServer((host, a.port), Handler)
 

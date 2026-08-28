@@ -12,7 +12,7 @@ walls from the footage itself, and never lies about what it invented.**
 [![Agent Builder](https://img.shields.io/badge/Google%20Cloud-Agent%20Builder-4285F4?style=flat-square)](https://cloud.google.com/products/agent-builder)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-MCP-a371f7?style=flat-square)](https://github.com/ClickHouse/mcp-clickhouse)
 [![licence](https://img.shields.io/badge/licence-MIT-6e7681?style=flat-square)](LICENSE)
-[![checks](https://img.shields.io/badge/checks-106%20passing-3fb950?style=flat-square)](#tests)
+[![checks](https://img.shields.io/badge/checks-642%20passing-3fb950?style=flat-square)](#tests)
 
 Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) — ClickHouse track.
 
@@ -145,6 +145,17 @@ official [`mcp-clickhouse`](https://github.com/ClickHouse/mcp-clickhouse) MCP
 server, so the agent composes its own questions rather than picking from ones
 somebody guessed in advance.
 
+## Three agents, because the work splits along a real seam
+
+**scout** decides what is worth doing and *cannot render*. **conversion** does
+the work and does not judge whether it was worth doing. **archivist** keeps the
+record and touches no pixels.
+
+That separation is not decoration. A single agent holding all three sets of
+tools drifts: asked *"is this worth converting?"* it renders to find out — which
+is exactly the cost triage exists to avoid. Taking `render_film` away from the
+scout is what keeps triage honest, and there is a test that asserts it.
+
 ## How it fits together
 
 <div align="center">
@@ -201,10 +212,17 @@ python tools/verify_gpu.py   # checks the CUDA path against known 3D truth
 ## Tests
 
 ```bash
-python -m pytest tests -q          # 106
+python -m pytest tests -q          # 642 checks across 11 suites
 python tests/test_e2e.py           # the joins, which is where bugs live
 python tests/test_polish.py        # the finishing pass, with readable output
 ```
+
+Each suite records results in a `FAIL` list and also runs standalone. `pytest`
+never inspected that list, so a test that recorded five failed checks and
+returned normally was reported as **passing** — which is exactly what happened
+when the agent became a multi-agent network. `tests/conftest.py` now fails any
+test whose module recorded a failure while it ran, and turning it on
+immediately surfaced two more assertions that had been quietly wrong.
 
 `test_e2e.py` writes its fixture at **30fps deliberately**, because a 24fps
 fixture agreed with three different hardcoded defaults and let a film that came

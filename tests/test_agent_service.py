@@ -170,28 +170,84 @@ def test_a_failing_tool_returns_a_failure():
     check("and reports films it can see", isinstance(got.get("films"), list))
 
 
-def test_the_agent_builds_without_a_database():
+def test_the_scout_cannot_render():
     """
-    The render path is the product; the ledger is a lens on it. A demo of the
-    first must not be blocked by the absence of the second -- but the model has
-    to be told, or it will answer catalogue questions from one job.
+    The property that makes triage worth having.
+
+    Triage exists so nobody spends an hour proving a shot was never going to
+    work. An agent that can both judge and render will, asked "is this worth
+    converting?", render to find out -- which is precisely the cost being
+    avoided. So the scout does not get render_film, and that is enforced here
+    rather than hoped for in a prompt.
     """
-    print("\nthe agent starts with or without the ledger")
+    print("")
+    print("the scout decides; it does not render")
     from agent_service.agent import build_agent
     a = build_agent()
-    check("it builds", a is not None and a.name == "frameflow_supervisor")
-    names = {getattr(t, "__name__", type(t).__name__) for t in a.tools}
-    for needed in ("triage_film", "render_film", "settle_walls", "record_run"):
-        check(f"exposes {needed}", needed in names)
 
+    check("the root is a supervisor", a.name == "frameflow_supervisor", a.name)
+    kids = {s.name: s for s in (a.sub_agents or [])}
+    check("with three specialists", set(kids) == {"scout", "conversion", "archivist"},
+          ", ".join(sorted(kids)))
+    if not kids:
+        return
+
+    def toolnames(agent):
+        return {getattr(t, "__name__", type(t).__name__) for t in agent.tools}
+
+    scout = toolnames(kids["scout"])
+    check("the scout can triage", "triage_film" in scout)
+    check("and cannot render", "render_film" not in scout, ", ".join(sorted(scout)))
+    check("and cannot repaint", "settle_walls" not in scout)
+
+    conv = toolnames(kids["conversion"])
+    check("conversion renders", "render_film" in conv)
+    check("and settles walls", "settle_walls" in conv)
+    check("and does not triage", "triage_film" not in conv, ", ".join(sorted(conv)))
+
+    arc = toolnames(kids["archivist"])
+    check("the archivist records runs", "record_run" in arc)
+    check("and touches no pixels",
+          not ({"render_film", "settle_walls", "triage_film"} & arc),
+          ", ".join(sorted(arc)))
+
+
+def test_every_agent_carries_the_honesty_rule():
+    """
+    The distinction between photographed and invented is the product. It is
+    repeated into every specialist rather than left with the supervisor,
+    because a sub-agent answers the user directly once it is handed control.
+    """
+    print("")
+    print("every agent is told what it must not blur")
+    from agent_service.agent import build_agent
+    a = build_agent()
+    for agent in [a] + list(a.sub_agents or []):
+        text = agent.instruction or ""
+        check(f"{agent.name}: defends photographed vs invented",
+              "INVENTED" in text and "PHOTOGRAPHED" in text)
+        check(f"{agent.name}: a refusal is a real answer",
+              "refusal is a real answer" in text)
+
+
+def test_a_missing_ledger_is_admitted_not_guessed():
+    """
+    The archivist is the one that answers catalogue questions, so it is the one
+    that has to say when it cannot.
+    """
+    print("")
+    print("no ledger means the archivist says so")
+    from agent_service.agent import build_agent
+    a = build_agent()
+    arc = next((s for s in (a.sub_agents or []) if s.name == "archivist"), None)
+    check("the archivist exists", arc is not None)
+    if arc is None:
+        return
     if ledger.settings() is None:
-        check("says so in the instruction when there is no ledger",
-              "not connected" in a.instruction, "")
+        check("and is told the ledger is not connected",
+              "NOT connected" in (arc.instruction or ""))
     else:
-        check("ledger configured, so no disclaimer is needed", True)
-
-    check("the instruction defends the distinction that matters",
-          "INVENTED" in a.instruction and "photograph" in a.instruction.lower())
+        check("ledger configured, so no disclaimer needed", True)
 
 
 def test_triage_understates():
@@ -254,7 +310,9 @@ if __name__ == "__main__":
     test_the_ledger_answers_questions_and_takes_no_orders()
     test_no_credentials_says_so()
     test_a_failing_tool_returns_a_failure()
-    test_the_agent_builds_without_a_database()
+    test_the_scout_cannot_render()
+    test_every_agent_carries_the_honesty_rule()
+    test_a_missing_ledger_is_admitted_not_guessed()
     test_triage_understates()
     test_a_locked_shot_is_refused_before_anything_is_rendered()
 

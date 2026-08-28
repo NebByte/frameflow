@@ -1,0 +1,86 @@
+{
+  "source": "pan_flat.mp4",
+  "shots": 1,
+  "frames": 90,
+  "wing_ratio": 0.22,
+  "fps": 24.0,
+  "wing_w": 105,
+  "width": 690,
+  "height": 270,
+  "gate": {
+    "geometry_db": 20.0,
+    "eff_full": 0.55,
+    "eff_narrow": 0.25,
+    "detail_min": 0.1,
+    "stale_max": 1.2
+  },
+  "theatre": {
+    "screen_width": 14.0,
+    "screen_height": 6.0,
+    "viewer_distance": 12.0,
+    "panel_width": 640,
+    "panel_height": 360,
+    "wing_dim": 0.82,
+    "feather_px": 24
+  },
+  "wings_on": 1,
+  "wings_generated": 0,
+  "mean_effective": 0.6105,
+  "mean_real_wing": 0.8899,
+  "provenance": {
+    "primary": 0.0,
+    "recovered": 0.8899,
+    "donated": 0.0,
+    "retrieved": 0.0,
+    "referenced": 0.0,
+    "directed": 0.0,
+    "generated": 0.1101,
+    "real_same_camera": 0.8899,
+    "photographic": 0.8899,
+    "not_this_place": 0.1101
+  },
+  "rungs_fired": [
+    "generated",
+    "recovered"
+  ],
+  "extent": {
+    "depth": 2.8571428571428577,
+    "z_near": 9.142857142857142,
+    "fraction_of_room": 0.23809523809523814,
+    "focal": 411.42857142857144,
+    "z_horizontal": 8.347826086956522,
+    "z_vertical": 9.142857142857142,
+    "binding": "vertical",
+    "depth_if_horizontal_only": 3.6521739130434785
+  },
+  "per_shot": [
+    {
+      "motion": "ROTATION",
+      "backend": "mosaic",
+      "geometry": 36.2,
+      "state": "FULL",
+      "coverage": 0.9972,
+      "effective": 0.6105,
+      "reasons": "effective 61%",
+      "displacement": 73.0,
+      "layer2": 0.009,
+      "layer_disagree": 241.1,
+      "layer2_purity": 0.107,
+      "shot": 0,
+      "start": 0,
+      "frames": 90,
+      "provenance": {
+        "primary": 0.0,
+        "recovered": 0.8899,
+        "donated": 0.0,
+        "retrieved": 0.0,
+        "referenced": 0.0,
+        "directed": 0.0,
+        "generated": 0.1101,
+        "real_same_camera": 0.8899,
+        "photographic": 0.8899,
+        "not_this_place": 0.1101
+      }
+    }
+  ]
+}

@@ -49,6 +49,8 @@ def start_studio():
     import app as studio
 
     studio.JOBS_DIR.mkdir(exist_ok=True)
+    for name in studio.seed_jobs():          # so /studio/ is never empty
+        print(f"seeded sample job: {name}", flush=True)
     srv = ThreadingHTTPServer(("127.0.0.1", STUDIO_PORT), studio.Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
