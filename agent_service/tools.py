@@ -29,7 +29,7 @@ JOBS = HERE / "jobs"
 # side wall for side walls is nonsense, and an agent that offers it looks like
 # it does not know what its own outputs are.
 SOURCE_DIRS = [HERE / "media"]
-OUTPUT_DIRS = [HERE / "demos"]
+OUTPUT_DIRS = [HERE / "demos"]        # absent by default; see NOTICE
 MEDIA_DIRS = SOURCE_DIRS + OUTPUT_DIRS + [JOBS]
 
 # Long renders run in a thread and report progress here rather than blocking a

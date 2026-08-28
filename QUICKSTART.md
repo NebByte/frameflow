@@ -79,7 +79,7 @@ agent_service/ the ADK agent and its tools
 tests/         106 checks
 tools/         synthetic footage, ground-truth validation, GPU checks
 results/       contact sheets, reports, per-shot measurements
-demos/         rendered three-panel videos
+samples/       one finished conversion, seeded into jobs/ on first run
 app.py         Frameflow Studio
 server.py      agent + studio on one port
 ```
