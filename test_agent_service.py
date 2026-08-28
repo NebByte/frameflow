@@ -17,11 +17,8 @@ Run: python test_agent_service.py
 """
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
 
-import numpy as np
 
 import ledger
 

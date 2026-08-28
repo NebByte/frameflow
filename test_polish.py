@@ -11,8 +11,6 @@ Run: python test_polish.py
 """
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
 
 import cv2
@@ -262,7 +260,7 @@ def test_settle_refines_without_inventing():
     cw = w + 2 * ww
     base = rng.integers(60, 200, (h, cw, 3), dtype=np.uint8)
     packed = []
-    for i in range(7):
+    for _ in range(7):
         c = base.copy()
         c += rng.integers(-6, 7, c.shape).astype(np.uint8)   # per-frame boil
         f = np.zeros((h, cw), bool)
@@ -416,7 +414,7 @@ def test_the_metric_does_not_punish_resolution():
 
     rng = np.random.default_rng(3)
     base = rng.integers(40, 210, (270, 480, 3), dtype=np.uint8)
-    for i in range(60):                       # hard edges, like real footage
+    for _ in range(60):                       # hard edges, like real footage
         x, y = int(rng.integers(0, 440)), int(rng.integers(0, 230))
         cv2.rectangle(base, (x, y), (x + 30, y + 26),
                       tuple(int(v) for v in rng.integers(0, 255, 3)), -1)

@@ -15,7 +15,6 @@ went wrong; a tool that returns {"ok": false, "error": ...} lets it say so.
 from __future__ import annotations
 
 import json
-import os
 import threading
 import uuid
 from pathlib import Path

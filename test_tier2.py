@@ -19,7 +19,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 import agent as ag
@@ -343,7 +342,6 @@ def test_single_setup_deadlock():
     partial reconstruction has to keep refusing, or the gate means nothing.
     """
     import filmindex as fx
-    import screenx_render as sr
     import backends as bk
 
     big = [np.full((480, 640, 3), 40 + i, np.uint8) for i in range(30)]
@@ -779,7 +777,6 @@ def test_same_take_checks_the_pixels():
     check("different content is refused however it registered",
           not ok and diff > 18.0, f"{diff:.1f}")
 
-    shifted = np.roll(a, 3, axis=1).astype(np.int16)
     noisy = np.clip(a.astype(np.int16) + rs.randint(-8, 9, a.shape), 0, 255).astype(np.uint8)
     ok, diff = tool.agrees([a], [noisy], H, 0, 0)
     check("grading and compression noise still agree", ok, f"{diff:.1f}")

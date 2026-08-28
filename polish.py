@@ -34,7 +34,6 @@ pixels. No finding can move a number.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import cv2

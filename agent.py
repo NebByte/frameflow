@@ -49,15 +49,13 @@ chunks per shot and prefers providers that accept a known-region condition.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
 
 import cv2
 import numpy as np
 
 import fill as fence_mod
-import wingcoverage as wc
 
 # ------------------------------------------------------------------ provenance
 # defined in provenance.py so the fence and the ladder cannot disagree; see the
@@ -181,7 +179,10 @@ class SameTakeTool(Tool):
 
     def run(self, ctx):
         try:
-            import crosscut as cc
+            # Imported for the side effect of failing: crosscut pulls in the
+            # matcher stack, and a shot should be told the rung is unavailable
+            # rather than dying halfway through it.
+            import crosscut  # noqa: F401
         except Exception:
             return ToolResult(None, None, DONATED, "crosscut unavailable")
         best = None

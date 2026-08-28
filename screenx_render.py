@@ -942,7 +942,6 @@ def run(path, outdir="jobs/cli", maxw=480, max_shots=None,
         raise SystemExit("no shots rendered")
 
     h, cw = rendered[0][0].shape[:2]
-    w = cw - 2 * int((cw - cw / (1 + 2 * WING)) / 2) if False else None
     ww = int(round((cw * WING) / (1 + 2 * WING)))
     probe = wl.render(rendered[0][0], ww, theatre)
     sheet0 = wl.contact_sheet(probe)

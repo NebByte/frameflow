@@ -1,0 +1,68 @@
+[project]
+name = "screenx-toolkit"
+version = "0.3.0"
+description = "Triage a film for 270-degree immersive conversion, recover the side walls from its own footage, and never lie about what was invented."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+keywords = ["screenx", "immersive", "cinema", "provenance", "gemini", "adk", "clickhouse"]
+
+dependencies = [
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+    "google-adk>=2.8",
+    "clickhouse-connect>=0.8",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# The 3D reconstruction path. Needs CUDA; see requirements-gpu.txt for why it
+# is not installed by default.
+gpu = ["torch>=2.2", "gsplat>=1.0"]
+generative = ["diffusers>=0.27", "transformers>=4.40", "accelerate>=0.30", "Pillow>=10.0"]
+
+[project.urls]
+Homepage = "https://github.com/NebByte/screenx-toolkit"
+Demo = "https://screenx-agent-460687416455.us-central1.run.app"
+
+[project.scripts]
+screenx-triage = "triage:main"
+
+# Flat layout, deliberately. Every module is a peer that can be run on its own
+# -- `python triage.py clip.mp4`, `python polish.py jobs/x` -- and the research
+# log documents each as a standalone finding. Packaging them under a src/ tree
+# would buy an import namespace and cost the thing that makes them legible.
+[tool.setuptools]
+py-modules = [
+    "wingcoverage", "backends", "gating", "screenx_render", "walls",
+    "triage", "polish", "ledger", "server", "agent", "director",
+    "fill", "provenance", "context", "reasoning", "offscreen", "splat",
+    "sfm", "shotdetect", "crosscut", "crossres", "filmindex", "fetchers",
+    "gemini", "wavespeed", "remote", "colabrun", "validate", "verify_gpu",
+    "make_test_clip",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# F  pyflakes      -- unused imports, undefined names, dead locals
+# E9 syntax        -- anything that will not run
+# B  bugbear       -- real footguns
+select = ["F", "E9", "B"]
+# B023 fires on closures that capture a loop variable. Every instance here is a
+#      helper invoked inside the same iteration, which is the safe shape, and
+#      rewriting them to take default arguments would obscure that.
+# B905 wants an explicit strict= on every zip. The pairings here are
+#      constructed together and are equal by construction.
+ignore = ["B023", "B905", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+# These suites also run standalone (`python test_polish.py`) and print a
+# readable pass/fail list, which is how the research log quotes them.
+addopts = "-q"

@@ -76,13 +76,17 @@ def capabilities() -> dict:
     """
     caps = {}
 
+    why = "no CUDA device visible"
     try:
         import backends as bk
         cuda = bool(bk.GaussianBackend.available())
     except Exception as e:
-        cuda, reason = False, f"{type(e).__name__}"
+        # Keep why it failed. This used to capture the exception and then
+        # report "no CUDA device visible" anyway, so an ImportError in the
+        # backend and a machine with no GPU produced the same message.
+        cuda, why = False, f"{type(e).__name__}: {e}"[:120]
     caps["gpu"] = dict(ok=cuda, label="CUDA / gaussian backend",
-                       reason="" if cuda else "no CUDA device visible",
+                       reason="" if cuda else why,
                        enables=["prefer_3d"])
 
     try:
@@ -365,7 +369,6 @@ def run_remote(job: dict, clip: Path, opts: dict):
     # the same argv the local runner builds, minus the paths it owns
     argv = build_argv(clip, outdir, opts)
     flags = []
-    skip = {"-o", str(outdir), str(clip)}
     it = iter(argv[4:])
     for a in it:
         if a == "-o":
@@ -389,7 +392,7 @@ def run_remote(job: dict, clip: Path, opts: dict):
 
     log("downloading results...")
     ok = False
-    for remote, local in ((f"/content/out/screenx_summary.json",
+    for remote, local in (("/content/out/screenx_summary.json",
                            outdir / "screenx_summary.json"),
                           ("/content/out/screenx_demo.mp4", outdir / "screenx_demo.mp4"),
                           ("/content/out/deliverable/master_widened.mp4",

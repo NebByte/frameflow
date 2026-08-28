@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="900" height="430"
+     font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <style>
+    .box   { fill: #6e768133; stroke: #6e7681; stroke-width: 1.4; rx: 8; }
+    .agent { fill: #388bfd26; stroke: #58a6ff; stroke-width: 1.8; }
+    .real  { fill: #3fb95026; stroke: #3fb950; stroke-width: 1.6; }
+    .inv   { fill: #f8514926; stroke: #f85149; stroke-width: 1.6; }
+    .db    { fill: #a371f726; stroke: #a371f7; stroke-width: 1.8; }
+    .t     { fill: #adbac7; font-size: 13px; }
+    .h     { fill: #e6edf3; font-size: 14.5px; font-weight: 600; }
+    .s     { fill: #768390; font-size: 11.5px; }
+    .arrow { stroke: #768390; stroke-width: 1.4; fill: none; marker-end: url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#768390"/>
+    </marker>
+  </defs>
+
+  <!-- entry -->
+  <rect class="box" x="20" y="180" width="120" height="56" rx="8"/>
+  <text class="h" x="80" y="204" text-anchor="middle">a film</text>
+  <text class="s" x="80" y="222" text-anchor="middle">+ a question</text>
+
+  <!-- agent -->
+  <rect class="box agent" x="186" y="150" width="190" height="116" rx="8"/>
+  <text class="h" x="281" y="178" text-anchor="middle">ADK agent</text>
+  <text class="t" x="281" y="199" text-anchor="middle">Gemini 2.5 Flash</text>
+  <text class="s" x="281" y="219" text-anchor="middle">Google Cloud Agent Builder</text>
+  <text class="s" x="281" y="237" text-anchor="middle">on Cloud Run</text>
+  <text class="s" x="281" y="255" text-anchor="middle">“which shots can we earn?”</text>
+
+  <path class="arrow" d="M144,208 L182,208"/>
+
+  <!-- tools -->
+  <rect class="box" x="430" y="24" width="215" height="52" rx="8"/>
+  <text class="h" x="446" y="46">triage_film</text>
+  <text class="s" x="446" y="65">verdict per shot, no render · ~7s</text>
+
+  <rect class="box" x="430" y="88" width="215" height="52" rx="8"/>
+  <text class="h" x="446" y="110">render_film</text>
+  <text class="s" x="446" y="129">recover the walls · CPU, no model</text>
+
+  <rect class="box real" x="430" y="152" width="215" height="52" rx="8"/>
+  <text class="h" x="446" y="174">settle_walls</text>
+  <text class="s" x="446" y="193">its own photography · free</text>
+
+  <rect class="box inv" x="430" y="216" width="215" height="52" rx="8"/>
+  <text class="h" x="446" y="238">repaint</text>
+  <text class="s" x="446" y="257">aimed at defects · costs the number</text>
+
+  <rect class="box db" x="430" y="284" width="215" height="52" rx="8"/>
+  <text class="h" x="446" y="306">record_run</text>
+  <text class="s" x="446" y="325">every shot, refusals included</text>
+
+  <path class="arrow" d="M380,190 C405,190 405,50 426,50"/>
+  <path class="arrow" d="M380,196 C405,196 405,114 426,114"/>
+  <path class="arrow" d="M380,208 L426,178"/>
+  <path class="arrow" d="M380,220 L426,242"/>
+  <path class="arrow" d="M380,232 C405,232 405,310 426,310"/>
+
+  <!-- clickhouse -->
+  <rect class="box db" x="700" y="252" width="176" height="116" rx="8"/>
+  <text class="h" x="788" y="280" text-anchor="middle">ClickHouse</text>
+  <text class="t" x="788" y="301" text-anchor="middle">screenx_shots</text>
+  <text class="s" x="788" y="322" text-anchor="middle">one row per shot</text>
+  <text class="s" x="788" y="340" text-anchor="middle">read via mcp-clickhouse</text>
+  <text class="s" x="788" y="358" text-anchor="middle">(MCP server)</text>
+
+  <path class="arrow" d="M649,310 L696,310"/>
+  <path class="arrow" d="M788,248 C788,150 640,300 386,242" stroke-dasharray="5 4"/>
+  <text class="s" x="655" y="212" text-anchor="middle">“across the catalogue,</text>
+  <text class="s" x="655" y="228" text-anchor="middle">what converts?”</text>
+
+  <!-- output -->
+  <rect class="box" x="700" y="24" width="176" height="116" rx="8"/>
+  <text class="h" x="788" y="50" text-anchor="middle">three feeds</text>
+  <text class="s" x="788" y="72" text-anchor="middle">left · centre · right</text>
+  <text class="s" x="788" y="92" text-anchor="middle">+ per-pixel provenance</text>
+  <text class="s" x="788" y="112" text-anchor="middle">photographed vs invented</text>
+  <text class="s" x="788" y="131" text-anchor="middle">and the number to prove it</text>
+  <path class="arrow" d="M649,114 L696,100"/>
+
+  <text class="s" x="450" y="404" text-anchor="middle">every tool is a thin wrapper over code that is already tested</text>
+</svg>

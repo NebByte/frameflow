@@ -134,7 +134,6 @@ class ResourceScout:
         found = corpus_finder(ctx) or []
         if not found:
             return []
-        import wingcoverage as wc
         import crosscut as cc
         return [Action("same_take", ag.SameTakeTool(found, cc.TakeMatcher()),
                        cost=2.0, provenance=ag.DONATED, prior_yield=0.30)]

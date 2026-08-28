@@ -1,145 +1,181 @@
+<div align="center">
+
 # Which shots can we earn?
 
 **An agent that triages a film for 270° immersive conversion, recovers the side
 walls from the footage itself, and never lies about what it invented.**
 
-Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/)
-— ClickHouse track.
+[![live demo](https://img.shields.io/badge/demo-live-3fb950?style=flat-square)](https://screenx-agent-460687416455.us-central1.run.app)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-58a6ff?style=flat-square)](https://cloud.google.com/vertex-ai)
+[![Agent Builder](https://img.shields.io/badge/Google%20Cloud-Agent%20Builder-4285F4?style=flat-square)](https://cloud.google.com/products/agent-builder)
+[![ClickHouse](https://img.shields.io/badge/ClickHouse-MCP-a371f7?style=flat-square)](https://github.com/ClickHouse/mcp-clickhouse)
+[![licence](https://img.shields.io/badge/licence-MIT-6e7681?style=flat-square)](LICENSE)
+[![tests](https://img.shields.io/badge/checks-234%20passing-3fb950?style=flat-square)](#tests)
 
-| | |
-|---|---|
-| **Try it** | https://screenx-agent-460687416455.us-central1.run.app |
-| **The agent** | `/dev-ui/` — ask it about a film |
-| **The converter** | `/studio/` — upload, convert, watch the three projector feeds |
-| **Stack** | Gemini · Google Cloud Agent Builder (ADK) · Cloud Run · ClickHouse MCP |
+Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) — ClickHouse track.
+
+<img src="docs/img/hero.png" width="820" alt="A frame widened to 270 degrees. The yellow lines mark where the main screen ends and the side walls begin — everything outside them was recovered from the camera's own pan.">
+
+<sub>The yellow lines mark where the main screen ends. **Everything outside them was
+recovered from this camera's own pan** — 90.4% genuinely photographed, nothing invented.</sub>
+
+</div>
 
 ---
 
 ## The problem
 
-ScreenX puts a film on three walls instead of one — a main screen plus the left
-and right of the auditorium. Converting a film to it takes **about two months
-per title**: two to three weeks moving assets, four or more weeks of CG, two
-weeks of QC. Even then only part of a film gets converted — *Bohemian Rhapsody*
-got 43 minutes of 134.
+ScreenX puts a film on three walls instead of one. Converting a film to it takes
+**about two months per title** — two to three weeks moving assets, four or more
+weeks of CG, two weeks of QC. Even then only part of a film gets converted:
+*Bohemian Rhapsody* got 43 minutes of 134.
 
 The labour is artists pulling frames from alternate takes and B-roll and
-rotoscoping them into the side panels. Wikipedia is blunt about the
-consequence: the format "has been rarely produced for Hollywood studio films
-due to the complexity of the additional CGI work."
+rotoscoping them into the side panels. Wikipedia is blunt about the consequence
+— the format *"has been rarely produced for Hollywood studio films due to the
+complexity of the additional CGI work."*
 
-But a large share of that work is spent answering a question that is not an art
-problem at all: **which shots are even possible.** A panning camera already
-photographed the side walls — the crop threw them away. A locked-off close-up
-never filmed them, and no amount of artist time recovers what was never
-photographed.
+But much of that work goes on a question that is not an art problem at all:
+**which shots are even possible.** A panning camera already photographed the
+side walls; the crop threw them away. A locked-off close-up never filmed them,
+and no artist time recovers what was never photographed.
 
-Deciding which is which is geometry. It is cheap. And doing it first is the
+That question is geometry. It is cheap. And answering it first is the
 difference between converting 43 minutes and converting the film.
 
-## What this does
+## Ask it
 
 ```
-triage    every shot's verdict, without rendering    ~7s per shot
-render    recover the walls that can be recovered    minutes to hours
-settle    fix the walls using their own photography  free, invents nothing
-ledger    every verdict, queryable across a catalogue
+> Is locked_off.mp4 worth converting?
+
+  → triage_film(video="locked_off.mp4")
+
+  No. The camera is locked off, so nothing was filmed beyond the central
+  frame and no side walls can be recovered from its own footage.
+  Not worth spending artist time on.
 ```
 
-Ask the agent *"is this worth converting?"* and it runs the same motion
-classifier, geometry hold-out probe and gate a real render uses — on a window
-of each shot — and tells you. On a 27-second handheld pan, triage took **91
-seconds** and predicted 50.7% effective coverage; the full render took **two
-hours** and delivered 52.54%.
+```
+> Triage pan_flat.mp4 and locked_off.mp4. Which is worth an artist week?
 
-Triage understates by construction. It judges each shot on a consecutive
-window, and a window holds fewer donor frames than the whole shot, so a render
-recovers more — never less. Understating costs you a shot you could have had.
-Overstating costs you the artist-month you committed on the strength of it.
+  pan_flat.mp4    100% of its running time can be widened to FULL,
+                  61.6% effective coverage.        Worth an artist week.
+  locked_off.mp4  0%. LOCKED OFF.                  Not worth an artist week.
+```
+
+Both transcripts are from the deployed service. Triage runs the *same* motion
+classifier, geometry hold-out probe and gate a real render uses — on a window of
+each shot. On a 27-second handheld pan it took **91 seconds** and predicted
+50.7% effective coverage; the full render took **two hours** and delivered
+**52.54%**.
+
+It understates by construction. A window holds fewer donor frames than the whole
+shot, so a render recovers more, never less. Understating costs you a shot you
+could have had. Overstating costs you the artist-month you committed on the
+strength of it.
+
+## What came out
+
+<div align="center">
+<img src="docs/img/walls-before-after.gif" width="620" alt="Side-by-side loop of the same recovered wall. Before: thin black lines run down it. After: they are gone.">
+</div>
+
+Those black lines were a **bug**, not a limitation. The donor frame was warped
+with bilinear interpolation against a black border while its validity mask was
+warped nearest-neighbour — so every donor's edge column composited at roughly
+half brightness *and was labelled real photography*. Reproduced in isolation: a
+flat 180-grey source yields a mask-valid column at 90.
+
+| on the same footage | before | after |
+|---|---|---|
+| thin dark lines | 2.67% of wall columns | **0.00%** |
+| wall shimmer vs the picture | 1.22× | **1.00×** |
+| delivered frame rate | 24 (source was 30) | **30** |
+| repaint cost on a good wall | the whole wing | **1.2%** |
+
+Three real rooms, three different days, CPU only, no model involved:
+
+| clip | genuinely photographed wall |
+|---|---|
+| café | 98.7% |
+| apartment walk | up to 99.3% |
+| gym pan, 1024px, whole take | **90.4%** |
 
 ## The line this refuses to blur
 
-Every pixel in a side wall is either **photographed** or **invented**, and the
-whole toolkit is built to keep those apart:
+Every pixel in a side wall is either **photographed** or **invented**:
 
 | rung | what it means |
 |---|---|
 | `primary` | the frame itself |
 | `recovered` | this camera filmed it, earlier in the same shot |
-| `donated` / `retrieved` | filmed at this location, in another take or cut |
-| `directed` | a model drew it, steered by a person who knows the room |
+| `donated` · `retrieved` | filmed at this location, in another take or cut |
+| `directed` | a model drew it, steered by someone who knows the room |
 | `generated` | a model drew it |
 
 `mean_real_wing` is the fraction that is genuinely photography. When a model
-repaints something, that number falls by exactly the repainted share, and the
-provenance map on disk is rewritten per pixel to match. **A refusal is a real
-answer** — `OFF` and `LOCKED` shots mean the camera never filmed anything out
-there, and the tool says so rather than inventing something and calling it a
-conversion.
+repaints something that number falls by exactly the repainted share, and the
+per-pixel provenance map on disk is rewritten to match.
 
-This is also why ClickHouse is load-bearing rather than decorative. The studio
-question is not "how did this shot do" — it is *"across everything we own, what
-converts without inventing anything?"* That is a query.
+**A refusal is a real answer.** `OFF` and `LOCKED` shots mean the camera never
+filmed anything out there, and the tool says so rather than inventing something
+and calling it a conversion.
+
+## Why ClickHouse is load-bearing
+
+The studio question is not *"how did this shot do"* — it is *"across everything
+we own, what converts without inventing anything?"* That is a query, and
+**refused shots have to be rows** or it cannot be asked.
 
 ```sql
-SELECT source, count() AS shots,
-       countIf(state IN ('FULL','NARROW','BORROWED')) AS earned,
-       round(avg(photographic), 4) AS mean_real_wing
-FROM screenx_shots GROUP BY source ORDER BY earned DESC
+SELECT source,
+       count()                                          AS shots,
+       countIf(state IN ('FULL','NARROW','BORROWED'))   AS earned,
+       round(avg(photographic), 4)                      AS mean_real_wing
+FROM screenx_shots
+GROUP BY source
+ORDER BY earned DESC
 ```
 
-Refused shots are rows too. A ledger of successes answers "what did we convert"
-and never "what could we have".
+One row per shot: motion class, backend, geometry dB, gate verdict, coverage,
+every provenance rung, and three artefact measurements. Reads go through the
+official [`mcp-clickhouse`](https://github.com/ClickHouse/mcp-clickhouse) MCP
+server, so the agent composes its own questions rather than picking from ones
+somebody guessed in advance.
 
-## Measured
+## How it fits together
 
-Three real rooms, three different days, CPU only, no model involved:
-
-| clip | real wall |
-|---|---|
-| café | 98.7% |
-| apartment walk | up to 99.3% |
-| gym pan (1024px, whole take) | **90.4%** |
-
-And the artefacts that made earlier cuts unwatchable, on the same footage:
-
-| | before | after |
-|---|---|---|
-| thin dark lines | 2.67% of wall columns | **0.00%** |
-| wall shimmer vs the picture | 1.22× | **1.00×** |
-| delivered frame rate | 24 (source was 30) | **30** |
-
-The dark lines were a bug, not a limitation: the donor frame was sampled with
-bilinear interpolation against a black border while its validity mask was
-sampled nearest-neighbour, so every donor's edge column composited at half
-brightness and was labelled as real photography.
+<div align="center">
+<img src="docs/img/architecture.svg" width="880" alt="A film and a question go to an ADK agent running Gemini on Cloud Run. It calls triage, render, settle and repaint tools, writes every shot to ClickHouse, and reads back through the ClickHouse MCP server. Output is three projector feeds plus per-pixel provenance.">
+</div>
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
-python make_test_clip.py            # synthetic clips with known ground truth
+python make_test_clip.py                  # synthetic clips, known ground truth
 
 python triage.py media/pan_flat.mp4       # earned
-python triage.py media/locked_off.mp4     # refused, and cheap to learn
+python triage.py media/locked_off.mp4     # refused — and cheap to learn
 
 python screenx_render.py media/pan_flat.mp4 -o jobs/demo --deliver
 python polish.py jobs/demo                # settle the walls; free
 python app.py                             # the studio, on :8420
 ```
 
-The agent needs Google Cloud:
+<details>
+<summary><b>The agent</b> — needs Google Cloud</summary>
 
 ```bash
 gcloud auth application-default login
 export GOOGLE_GENAI_USE_VERTEXAI=TRUE
 export GOOGLE_CLOUD_PROJECT=your-project GOOGLE_CLOUD_LOCATION=us-central1
-python server.py                          # agent on :8080/dev-ui/
+python server.py            # agent on :8080/dev-ui/ , studio on :8080/studio/
 ```
+</details>
 
-The ledger needs a (free) ClickHouse Cloud service. Without it everything else
-still runs, and the agent says the ledger is not connected rather than
-answering catalogue questions from one job:
+<details>
+<summary><b>The ledger</b> — needs a free ClickHouse Cloud service</summary>
 
 ```bash
 export CLICKHOUSE_HOST=... CLICKHOUSE_USER=... CLICKHOUSE_PASSWORD=...
@@ -147,46 +183,48 @@ python ledger.py --write jobs/demo
 python ledger.py --examples
 ```
 
-## How it fits together
+Without it everything else still runs, and the agent says the ledger is not
+connected rather than answering catalogue questions from a single job.
+</details>
 
-```
-      you ─────► ADK agent (Gemini, Cloud Run)
-                     │
-                     ├── triage_film ──► shot detect, motion class,
-                     │                    hold-out geometry, gate
-                     ├── render_film ──► propagate walls, settle, deliver
-                     ├── settle_walls ─► median each frame against its
-                     │                    own aligned neighbours
-                     ├── record_run ───► ClickHouse (writes)
-                     └── ledger.* ─────► ClickHouse MCP server (reads)
-```
+<details>
+<summary><b>The 3D path</b> — needs CUDA</summary>
 
-Every tool is a thin wrapper over code that is already tested. An agent that
-reimplements the pipeline inside its tool layer is an agent whose numbers
-nobody has checked.
+```bash
+pip install -r requirements.txt -r requirements-gpu.txt
+python verify_gpu.py        # checks the CUDA path against known 3D truth
+```
+</details>
 
 ## What is still broken
 
 **Depth.** A single homography cannot place off-plane content, so a recovered
-wall can repeat signage that is still on screen in the centre. Measured: 3.0%
-of wall patches echo the centre on a recovered wall. `GaussianBackend`
-(`backends.py`) reconstructs the scene properly and is written — it has never
-run, because it needs CUDA. It refuses to fall back rather than putting
-homography pixels behind a 3D label.
+wall can repeat signage that is still on screen in the centre — measured at 3.0%
+of wall patches. `GaussianBackend` reconstructs the scene properly and is
+written; it needs CUDA and *refuses to fall back* rather than putting homography
+pixels behind a 3D label.
+
+We tried the cheap fix and threw it away: rerouting the clip to a layered
+backend changed the seam metric not at all (1.88× both ways), dropped hold-out
+geometry from 32.4 to 29.2 dB, and added a warped corner. The negative result is
+[in the log](docs/RESEARCH-LOG.md).
 
 **Nobody has seen any of this in a theatre.** Every number here was measured at
-1:1 on a monitor, which is the harshest possible viewing condition for content
-that is watched at 40° off-axis in a dark room. That test has not been done and
-is not something a measurement can substitute for.
+1:1 on a monitor — the harshest possible condition for content watched at 40°
+off-axis in a dark room. No measurement substitutes for that test.
 
 ## Tests
 
 ```bash
 python test_agent_service.py     # 44 — agent, ledger, triage
 python test_polish.py            # 62 — the finishing pass
-python -m pytest test_tier2.py test_app.py test_splat.py -q   # 45
 python test_e2e.py               # 52 — the joins, which is where bugs live
+python -m pytest -q              # 76 — everything else
 ```
+
+`test_e2e.py` writes its fixture at **30fps deliberately**, because a 24fps
+fixture agreed with three different hardcoded defaults and let a film that came
+out a quarter slow pass the whole suite.
 
 ## Layout
 
@@ -201,8 +239,12 @@ python test_e2e.py               # 52 — the joins, which is where bugs live
 | `gating.py` | the hold-out geometry probe and the gate |
 | `polish.py` | inspect, settle, and aimed repaint |
 | `walls.py` | auditorium geometry |
-| [`docs/RESEARCH-LOG.md`](docs/RESEARCH-LOG.md) | how every one of these was arrived at, including the negative results |
+| `backends.py` | mosaic · layered · gaussian |
+| [`docs/RESEARCH-LOG.md`](docs/RESEARCH-LOG.md) | how each of these was arrived at, negative results included |
+
+Flat by design: every module runs on its own, and each is a standalone finding
+in the log.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

@@ -27,7 +27,6 @@ lying backend before its pixels reach the metric.
 """
 from __future__ import annotations
 
-import cv2
 import numpy as np
 
 import wingcoverage as wc
@@ -139,7 +138,6 @@ def leave_one_out(frames, backend, tracker=None, probes=6, margin=0.18):
     if n < 8:
         return 0.0, []
     h, w = frames[0].shape[:2]
-    band = int(w * margin)
     # A backend with no 2D warp scores itself its own way. Without this
     # dispatch `warps()` raises, the score is 0.0 dB, and `decide` gates every
     # such shot OFF before a single recovered pixel is looked at -- a silent

@@ -36,7 +36,6 @@ import json
 import shutil
 import socket
 import subprocess
-import sys
 import threading
 import time
 import urllib.error
@@ -86,7 +85,7 @@ def make_clip(path: Path, frames=48, w=480, h=270):
     rng = np.random.default_rng(11)
     pano = np.zeros((h, w * 3, 3), np.uint8)
     pano[:] = rng.integers(30, 90, (h, w * 3, 3), dtype=np.uint8)
-    for i in range(70):                       # hard edges give ORB something
+    for _ in range(70):                       # hard edges give ORB something
         x = int(rng.integers(0, w * 3 - 40))
         y = int(rng.integers(0, h - 40))
         c = tuple(int(v) for v in rng.integers(90, 255, 3))
@@ -296,7 +295,6 @@ def _numbers_match_pixels(summary, provs, deliv):
         check("the headline can be recomputed from the maps", False, "no maps")
         return
     import agent as ag
-    import provenance as P
     shares = []
     for p in provs:
         try:
@@ -391,7 +389,6 @@ def _polish(job_dir, summary, segs):
     """
     print("\nthe finishing pass, on the film that was just made")
     import polish
-    import provenance as P
 
     # ---- the free pass first, because that is what the button now does
     deliv = Path(job_dir) / "deliverable"

@@ -153,7 +153,7 @@ def segment(path, min_len=16, verify=True, verbose=False):
 
 
 if __name__ == "__main__":
-    import sys, json
+    import sys
     path = sys.argv[1]
     r = segment(path)
     x0, y0, x1, y1 = r["crop"]
