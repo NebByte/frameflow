@@ -50,6 +50,9 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 W, H, FPS = 1920, 1080, 30
 
+# Sum of the 11 suites run standalone. Bump it when the suites do.
+CHECKS = 651
+
 BG = (13, 17, 23)
 FG = (230, 237, 243)
 DIM = (139, 148, 158)
@@ -484,9 +487,16 @@ def scene_close(reel):
     img = canvas()
     d = ImageDraw.Draw(img)
     text(d, (110, 180), "Every pixel is either", F(46), DIM)
-    text(d, (110, 270), "photographed", F(80, True), GREEN)
-    text(d, (560, 292), "or", F(46), DIM)
-    text(d, (660, 270), "invented.", F(80, True), RED)
+    # Laid out by measuring, not by three guessed x positions -- at 80px bold
+    # "photographed" is wider than the 450px the next column assumed, so "or"
+    # was drawn on top of its last letters and "invented." crowded in behind.
+    big, small = F(80, True), F(46)
+    x = 110
+    text(d, (x, 270), "photographed", big, GREEN)
+    x += big.getlength("photographed") + 28
+    text(d, (x, 292), "or", small, DIM)
+    x += small.getlength("or") + 28
+    text(d, (x, 270), "invented.", big, RED)
     text(d, (110, 430),
          "When a model repaints something, the real-footage number falls by\n"
          "exactly the repainted share, and the per-pixel map on disk is rewritten\n"
@@ -508,7 +518,7 @@ def scene_close(reel):
          F(38), DIM)
     text(d, (110, 650), "frameflow-460687416455.us-central1.run.app", F(36), BLUE)
     text(d, (110, 710), "github.com/NebByte/frameflow", F(36), BLUE)
-    text(d, (110, 830), "642 checks \u00b7 Apache-2.0", F(30), DIM)
+    text(d, (110, 830), f"{CHECKS} checks \u00b7 Apache-2.0", F(30), DIM)
     reel.hold(img, DURATIONS['scene_close'] * 0.45)
 
 
