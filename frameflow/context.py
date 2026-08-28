@@ -34,7 +34,7 @@ WHAT THIS MODULE DOES NOT DO
 ----------------------------
 It does not call a model, and it does not generate. It turns files and notes
 into a prompt plus a provenance label, and hands both to whatever generator is
-configured. `fill.HostedGenerator` is the API path; this is what gives it
+configured. `gemini.GeminiImageEdit` is the model path; this is what gives it
 something worth saying.
 """
 from __future__ import annotations

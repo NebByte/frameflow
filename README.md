@@ -12,7 +12,7 @@ walls from the footage itself, and never lies about what it invented.**
 [![Agent Builder](https://img.shields.io/badge/Google%20Cloud-Agent%20Builder-4285F4?style=flat-square)](https://cloud.google.com/products/agent-builder)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-MCP-a371f7?style=flat-square)](https://github.com/ClickHouse/mcp-clickhouse)
 [![licence](https://img.shields.io/badge/licence-Apache--2.0-6e7681?style=flat-square)](LICENSE)
-[![checks](https://img.shields.io/badge/checks-651%20passing-3fb950?style=flat-square)](#tests)
+[![checks](https://img.shields.io/badge/checks-618%20passing-3fb950?style=flat-square)](#tests)
 
 Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) — ClickHouse track.
 
@@ -212,7 +212,7 @@ python tools/verify_gpu.py   # checks the CUDA path against known 3D truth
 ## Tests
 
 ```bash
-python -m pytest tests -q          # 651 checks across 11 suites
+python -m pytest tests -q          # 618 checks across 10 suites
 python tests/test_e2e.py           # the joins, which is where bugs live
 python tests/test_polish.py        # the finishing pass, with readable output
 ```
@@ -241,7 +241,7 @@ frameflow/          the pipeline
   walls.py            auditorium geometry
   ledger.py           the ClickHouse schema and writer
 agent_service/      the ADK agent and its tools
-tests/              651 checks across 11 suites
+tests/              618 checks across 10 suites
 tools/              synthetic footage, ground-truth validation, GPU checks
 app.py              Frameflow Studio
 server.py           agent + studio on one port

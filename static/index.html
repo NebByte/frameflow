@@ -42,8 +42,8 @@
         <div class="body" id="keypanel" hidden style="border-top:1px solid var(--line)">
           <p class="note">Only needed for the paid generative repaint. Recovering
             walls from the footage itself needs no credentials at all.</p>
-          <label class="field">WaveSpeed key &mdash; this session only
-            <input type="password" id="wskey" placeholder="wsk_live_&hellip;"
+          <label class="field">Gemini API key &mdash; this session only
+            <input type="password" id="wskey" placeholder="AIza&hellip;"
                    autocomplete="off" spellcheck="false">
           </label>
           <button class="ghost" id="savekey">Use for this session</button>
@@ -178,10 +178,7 @@
                 <option value="mirror" selected>mirror &mdash; local, no cost</option>
                 <option value="">Leave dark &mdash; recovered pixels only</option>
                 <option value="inpaint">inpaint &mdash; local</option>
-                <option value="wavespeed">wavespeed &mdash; hosted, paid per shot</option>
-                <option value="gemini-edit">gemini-edit &mdash; hosted, per frame</option>
-                <option value="diffusion">diffusion &mdash; local, needs CUDA</option>
-                <option value="hosted">hosted &mdash; your own endpoint</option>
+                <option value="gemini-edit">gemini-edit &mdash; Gemini, per frame</option>
               </select>
             </label>
           <p class="note">Every invented pixel is written as <strong>GENERATED</strong>
@@ -192,7 +189,7 @@
           <label class="check" id="remoterow">
             <input type="checkbox" id="remote">
             <span>Run on a Colab runtime<span class="why" id="remotewhy">the
-              gaussian backend, RETRIEVED and the diffusion generator need CUDA;
+              gaussian backend and RETRIEVED need CUDA;
               everything else is faster here</span></span>
           </label>
 
@@ -346,9 +343,7 @@
               <option value="">Inspect only &mdash; look, don't touch</option>
               <option value="mirror">mirror &mdash; local, no cost</option>
               <option value="inpaint">inpaint &mdash; local</option>
-              <option value="wavespeed">wavespeed &mdash; hosted, paid per shot</option>
-              <option value="gemini-edit">gemini-edit &mdash; hosted, per frame</option>
-              <option value="hosted">hosted &mdash; your own endpoint</option>
+              <option value="gemini-edit">gemini-edit &mdash; Gemini, per frame</option>
             </select>
           </label>
           <label class="field">Shots to repaint

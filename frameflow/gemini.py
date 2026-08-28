@@ -2,7 +2,7 @@
 gemini — Google's models behind this repo's two model-shaped holes.
 
     ApiReasoner.call     "look at this frame and tell me what is off to the side"
-    HostedGenerator      "draw it"
+    GeminiImageEdit      "draw it"
 
 The first is a clean fit. The second is not, and the mismatch is worth stating
 plainly before anyone wires it and wonders why the fence keeps firing.

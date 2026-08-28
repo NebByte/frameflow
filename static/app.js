@@ -55,7 +55,7 @@ const FLAGS = [
    The whole argument of this tool is that the walls come out of the footage
    for free. So it stays hidden until somebody actually picks a generator that
    needs one, and it says so when it appears. */
-const HOSTED = new Set(["wavespeed", "gemini-edit", "hosted"]);
+const HOSTED = new Set(["gemini-edit"]);
 
 function syncKeyPanel() {
   const panel = $("#keypanel");
@@ -63,7 +63,7 @@ function syncKeyPanel() {
   const picked = [$("#dark"), $("#polishgen")]
     .filter(Boolean).map(el => el.value);
   const needs = picked.some(v => HOSTED.has(v));
-  const already = state.caps && state.caps.wavespeed && state.caps.wavespeed.ok;
+  const already = state.caps && state.caps.gemini && state.caps.gemini.ok;
   panel.hidden = !needs || already;
 }
 
@@ -97,7 +97,7 @@ $("#savekey").addEventListener("click", async () => {
   const key = $("#wskey").value.trim();
   const res = await fetch("/api/keys", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ WAVESPEED_API_KEY: key }),
+    body: JSON.stringify({ GEMINI_API_KEY: key }),
   });
   const out = await res.json();
   $("#wskey").value = "";                       // not kept in the page either
@@ -532,9 +532,7 @@ $("#dl").addEventListener("click", () => {
 /* What a repaint costs in money. What it costs in truth is on the panel itself,
  * because that one applies to every generator including the free ones. */
 const POLISH_COST = {
-  wavespeed: "Roughly $0.20 per repainted shot.",
-  "gemini-edit": "Hosted, billed per frame, and subject to your image quota.",
-  hosted: "Whatever your own endpoint charges.",
+  "gemini-edit": "Billed per frame, and subject to your image quota.",
 };
 
 $("#polishgen").addEventListener("change", () => {

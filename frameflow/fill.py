@@ -18,19 +18,19 @@ The generator receives a per-pixel confidence map built from the same weights
 the metric uses -- staleness and detail. Pixels adjacent to fresh, detailed
 recovered content are high confidence and should be extended faithfully; pixels
 deep in a hole far from anything real are low confidence and should be treated
-as free invention. That map is what a diffusion model conditions on, alongside
-the recovered canvas as geometric anchor.
+as free invention. A generative model conditions on that map alongside the
+recovered canvas as geometric anchor.
 
-The default generator here is OpenCV inpainting -- a stand-in that runs on CPU
-and lets the fence be tested end to end. Swap `DiffusionGenerator` in on a GPU
-host; the fence is unchanged.
+WHAT SHIPS HERE
+---------------
+Two CPU generators that invent nothing a model would: OpenCV inpainting, and a
+mirror-and-blur built for wing-sized holes. Both are honest about knowing very
+little out there. The only generative path in the project is Gemini, via
+`frameflow.gemini` -- the fence is identical whichever writes the pixels, and
+it is the fence, not the generator, that makes the real-footage number mean
+something.
 """
 from __future__ import annotations
-
-import base64
-import json
-import os
-import urllib.request
 
 import cv2
 import numpy as np
@@ -107,215 +107,6 @@ class MirrorGenerator:
                 built[:, a:b] = (seg.astype(np.float32) * (1.0 - 0.35 * far)).astype(np.uint8)
             out[:, lo:hi] = built
         return out
-
-
-class HostedGenerator:
-    """
-    Call a hosted video-outpainting endpoint. No GPU on this machine required.
-
-    Deliberately thin. Endpoints disagree about everything -- field names, how
-    the mask is encoded, whether frames go up singly or as a batch -- so the
-    request shape is supplied by the caller rather than guessed at here:
-
-        HostedGenerator(url=..., token=...,
-                        encode=lambda canvas, hole, conf: {...json body...},
-                        decode=lambda payload: rgb_array)
-
-    Reads FRAMEFLOW_ENDPOINT and FRAMEFLOW_TOKEN from the environment when not
-    passed. Compositing and the fence stay on this side: the endpoint returns a
-    full frame and never decides which pixels are kept.
-
-    UNTESTED against a live service -- written from the endpoint contract, not
-    from a round trip. Expect to adjust `encode`/`decode` for your provider.
-    """
-    name = "hosted"
-
-    def __init__(self, url=None, token=None, encode=None, decode=None, timeout=120):
-        # the pre-rename names still work, so an existing shell profile does
-        # not silently stop supplying an endpoint
-        self.url = (url or os.environ.get("FRAMEFLOW_ENDPOINT", "")
-                    or os.environ.get("SCREENX_ENDPOINT", ""))
-        self.token = (token or os.environ.get("FRAMEFLOW_TOKEN", "")
-                      or os.environ.get("SCREENX_TOKEN", ""))
-        self.encode = encode
-        self.decode = decode
-        self.timeout = timeout
-
-    def _default_encode(self, canvas, hole, confidence):
-        ok_i, buf_i = cv2.imencode(".png", canvas)
-        ok_m, buf_m = cv2.imencode(".png", hole.astype(np.uint8) * 255)
-        if not (ok_i and ok_m):
-            raise RuntimeError("could not encode the frame for upload")
-        return dict(image=base64.b64encode(buf_i).decode(),
-                    mask=base64.b64encode(buf_m).decode(),
-                    prompt="extend the scene sideways, same place and moment")
-
-    @staticmethod
-    def _default_decode(payload):
-        blob = payload.get("image") or payload.get("output")
-        if isinstance(blob, list):
-            blob = blob[0]
-        if not blob:
-            raise RuntimeError("endpoint returned no image")
-        raw = base64.b64decode(blob)
-        img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
-        if img is None:
-            raise RuntimeError("endpoint returned something that is not an image")
-        return img
-
-    def __call__(self, canvas, hole, confidence):
-        if not self.url:
-            raise RuntimeError(
-                "HostedGenerator needs an endpoint. Set FRAMEFLOW_ENDPOINT (and "
-                "FRAMEFLOW_TOKEN), or pass url=. Use MirrorGenerator to stay local."
-            )
-        body = (self.encode or self._default_encode)(canvas, hole, confidence)
-        req = urllib.request.Request(
-            self.url, data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json",
-                     **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            payload = json.loads(r.read())
-        out = (self.decode or self._default_decode)(payload)
-        if out.shape[:2] != canvas.shape[:2]:
-            out = cv2.resize(out, (canvas.shape[1], canvas.shape[0]))
-        return out
-
-
-class DiffusionGenerator:
-    """
-    Video-diffusion outpainting, conditioned on the recovered canvas.
-
-    The recovered pixels are the geometric anchor: the model receives correct
-    parallax and structure and only has to invent texture, which is what keeps
-    generation from free-running. Feed `confidence` as an extra conditioning
-    channel and run the model at low strength where confidence is high.
-
-    Requires CUDA.
-
-    STRENGTH IS DRIVEN BY CONFIDENCE, WHICH IS THE POINT
-    ----------------------------------------------------
-    A single denoising strength across the whole hole treats a pixel one column
-    from recovered geometry the same as one in the middle of a void. `confidence`
-    already measures that difference -- it is the metric's own staleness and
-    detail weights, blurred outward from the real content. Feeding it in as a
-    per-pixel strength means the model barely touches well-anchored pixels and
-    is free where there is nothing to anchor to.
-
-    The output is still GENERATED everywhere. Conditioning on real geometry makes
-    invention better, not real, and `GenerateTool` labels it accordingly.
-    """
-    name = "diffusion"
-
-    #: Model id. SD2 inpainting is the default because it is the smallest thing
-    #: that accepts a mask and runs in 8 GB; anything with the same
-    #: (prompt, image, mask_image, strength) call signature drops in.
-    DEFAULT_MODEL = "stabilityai/stable-diffusion-2-inpainting"
-
-    def __init__(self, model=None, prompt=None, steps=25, guidance=7.0,
-                 max_side=768, seed=0, device="cuda", pipe=None):
-        self.model = model or self.DEFAULT_MODEL
-        self.prompt = prompt or ("continuation of the scene, same lighting, "
-                                 "same lens, photographic, no new subjects")
-        self.steps = steps
-        self.guidance = guidance
-        self.max_side = max_side
-        self.seed = seed
-        self.device = device
-        self._pipe = pipe                # inject a fake in tests
-
-    @staticmethod
-    def available():
-        try:
-            import torch
-            return bool(torch.cuda.is_available())
-        except Exception:
-            return False
-
-    def pipe(self):
-        if self._pipe is None:
-            try:
-                import torch
-                from diffusers import StableDiffusionInpaintPipeline
-            except ImportError as e:
-                raise RuntimeError(
-                    "DiffusionGenerator needs diffusers; pip install diffusers "
-                    "transformers accelerate") from e
-            self._pipe = StableDiffusionInpaintPipeline.from_pretrained(
-                self.model, torch_dtype=torch.float16).to(self.device)
-            self._pipe.set_progress_bar_config(disable=True)
-        return self._pipe
-
-    def bands(self, confidence, hole, n=3):
-        """
-        Split the hole into confidence bands, each denoised at its own strength.
-
-        Per-pixel strength is not something a diffusion pipeline accepts, so the
-        hole is quantised into a few bands and the model is run once per band,
-        strongest last. Three bands is not a tuned number -- it is the fewest
-        that distinguishes "just outside the recovered region", "somewhere in
-        between", and "nothing to go on".
-        """
-        conf = np.clip(np.asarray(confidence, np.float32), 0.0, 1.0)
-        out = []
-        edges = np.linspace(0.0, 1.0, n + 1)
-        for lo, hi in zip(edges[:-1], edges[1:]):
-            band = hole & (conf >= lo) & (conf < hi if hi < 1.0 else conf <= 1.0)
-            if band.any():
-                # high confidence -> low strength. A well-anchored pixel should
-                # be nudged, not reimagined.
-                strength = float(np.clip(1.0 - (lo + hi) / 2.0, 0.2, 1.0))
-                out.append((band, strength))
-        return sorted(out, key=lambda t: t[1])
-
-    def __call__(self, canvas, hole, confidence):
-        if self._pipe is None and not self.available():
-            raise RuntimeError(
-                "DiffusionGenerator requires CUDA. Use InpaintGenerator on CPU, "
-                "MirrorGenerator for a plausible wing, or run this on a GPU host "
-                "-- see remote.py."
-            )
-        from PIL import Image
-
-        h, w = canvas.shape[:2]
-        scale = min(1.0, self.max_side / max(h, w))
-        sw, sh = _mult8(int(w * scale)), _mult8(int(h * scale))
-
-        work = cv2.resize(canvas, (sw, sh), interpolation=cv2.INTER_AREA)
-        pipe = self.pipe()
-        gen = None
-        try:
-            import torch
-            gen = torch.Generator(device=self.device).manual_seed(self.seed)
-        except Exception:
-            pass
-
-        for band, strength in self.bands(confidence, hole):
-            m = cv2.resize(band.astype(np.uint8) * 255, (sw, sh),
-                           interpolation=cv2.INTER_NEAREST)
-            if not m.any():
-                continue
-            res = pipe(prompt=self.prompt,
-                       image=Image.fromarray(work[:, :, ::-1]),
-                       mask_image=Image.fromarray(m),
-                       strength=strength,
-                       num_inference_steps=self.steps,
-                       guidance_scale=self.guidance,
-                       generator=gen)
-            got = np.asarray(res.images[0])[:, :, ::-1]
-            if got.shape[:2] != (sh, sw):
-                got = cv2.resize(got, (sw, sh))
-            # keep each band's result only inside that band, so a later, freer
-            # pass cannot overwrite a better-anchored earlier one
-            work[m > 0] = got[m > 0]
-
-        out = cv2.resize(work, (w, h), interpolation=cv2.INTER_CUBIC)
-        return out
-
-
-def _mult8(x, lo=64):
-    """Diffusion UNets need dimensions divisible by 8."""
-    return max(lo, int(round(x / 8.0)) * 8)
 
 
 # ---------------------------------------------------------------- confidence

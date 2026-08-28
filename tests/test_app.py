@@ -127,9 +127,9 @@ def test_argv_parity():
           argv[argv.index("--other-cut") + 1] == "b.mp4"
           and argv[argv.index("--also") + 1] == "wide.mp4")
 
-    argv = app.build_argv(clip, out, dict(wings_on_dark="wavespeed"))
+    argv = app.build_argv(clip, out, dict(wings_on_dark="gemini-edit"))
     check("a hosted generator reaches the CLI",
-          argv[argv.index("--wings-on-dark") + 1] == "wavespeed")
+          argv[argv.index("--wings-on-dark") + 1] == "gemini-edit")
     check("an unknown generator never reaches the CLI",
           "--wings-on-dark" not in app.build_argv(clip, out,
                                                   dict(wings_on_dark="nonsense")))
@@ -147,7 +147,7 @@ def test_argv_parity():
 def test_capabilities():
     print("\nwhat this machine reports it can do")
     caps = app.capabilities()
-    for key in ("gpu", "colmap", "ffmpeg", "wavespeed", "gemini"):
+    for key in ("gpu", "colmap", "ffmpeg", "gemini"):
         check(f"{key} is reported", key in caps)
     check("every capability carries a label",
           all(c.get("label") for c in caps.values()))
@@ -441,7 +441,7 @@ def test_polish_is_reachable_and_priced():
           "unknown generator" in src.split("def _polish(")[1][:2000])
     check("every generator offered by the UI is one the pipeline has",
           all(f'value="{g}"' in html.split('id="polishgen"')[1][:900]
-              for g in ("mirror", "inpaint", "wavespeed", "gemini-edit", "hosted")))
+              for g in ("mirror", "inpaint", "gemini-edit")))
     check("inspecting is the default and costs nothing",
           'value=""' in html.split('id="polishgen"')[1][:300])
 

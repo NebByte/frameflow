@@ -5,7 +5,7 @@ WHY THIS EXISTS
 ---------------
 The other eight suites are 485 assertions and every one of them was green
 through every bug this project has shipped. That is not an accident, it is what
-they test: each stops at a seam. `test_wavespeed` asserts the request body up to
+they test: each stops at a seam. `test_gemini` asserts the request body up to
 the socket. `test_app` asserts the argv up to the subprocess. `test_tier2`
 asserts pixels up to the file. Nobody asserted that the pieces meet.
 

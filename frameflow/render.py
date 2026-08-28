@@ -726,19 +726,19 @@ def process_shot(frames, tracker, fill_holes=True, dark_generator=None,
                      **stats)
 
 
-def _wavespeed():
-    from . import wavespeed
-    return wavespeed.WaveSpeedOutpainter()
-
-
 def _gemini_edit():
     from . import gemini
     return gemini.GeminiImageEdit()
 
 
+# Two CPU generators that invent without a model, and Gemini, which is the only
+# generative model this project uses. Third-party AI paths (a Stable Diffusion
+# UNet, a generic hosted outpainting endpoint, the WaveSpeed API) were removed:
+# the fence and the provenance ladder are what make the real-footage number
+# mean anything, and they are generator-agnostic, so nothing about the argument
+# depended on having several vendors behind that slot.
 GENERATORS = {"mirror": fl.MirrorGenerator, "inpaint": fl.InpaintGenerator,
-              "diffusion": fl.DiffusionGenerator, "hosted": fl.HostedGenerator,
-              "wavespeed": _wavespeed, "gemini-edit": _gemini_edit}
+              "gemini-edit": _gemini_edit}
 
 
 def run(path, outdir="jobs/cli", maxw=480, max_shots=None,

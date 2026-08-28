@@ -50,7 +50,7 @@ HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 JOBS_DIR = HERE / "jobs"
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
-GENERATORS = ("mirror", "inpaint", "diffusion", "hosted", "wavespeed", "gemini-edit")
+GENERATORS = ("mirror", "inpaint", "gemini-edit")
 MAX_BYTES = 4 << 30
 CHUNK = 1 << 16
 
@@ -136,15 +136,6 @@ def capabilities() -> dict:
     caps["ffmpeg"] = dict(ok=_has("ffmpeg"), label="ffmpeg",
                           reason="" if _has("ffmpeg") else "ffmpeg not on PATH",
                           enables=["web_encode"])
-
-    ws = bool(KEYS.get("WAVESPEED_API_KEY") or os.environ.get("WAVESPEED_API_KEY")
-              or os.environ.get("FRAMEFLOW_TOKEN")
-              or os.environ.get("SCREENX_TOKEN"))   # pre-rename name still read
-    caps["wavespeed"] = dict(ok=ws, label="WaveSpeed outpainter",
-                             reason="" if ws else "paste a key below, or set "
-                                                  "WAVESPEED_API_KEY",
-                             enables=["wings_on_dark:wavespeed"],
-                             wants_key="WAVESPEED_API_KEY")
 
     try:
         from frameflow import colabrun
@@ -358,10 +349,9 @@ def run_remote(job: dict, clip: Path, opts: dict):
     """
     Run this job on a Colab runtime instead of here.
 
-    The reason to bother is narrow and real: the gaussian backend, the RETRIEVED
-    rung and the diffusion generator all need CUDA, and no amount of patience on
-    a laptop substitutes. Everything else is faster locally once the upload is
-    counted.
+    The reason to bother is narrow and real: the gaussian backend and the
+    RETRIEVED rung both need CUDA, and no amount of patience on a laptop
+    substitutes. Everything else is faster locally once the upload is counted.
 
     An accelerator is not assumed. Colab hands out CPU runtimes while refusing
     GPUs to an account over quota, so if a GPU was asked for and a CPU arrived,
@@ -1009,7 +999,7 @@ class Handler(BaseHTTPRequestHandler):
 
         repair = body.get("repair") or None
         if repair is True:
-            repair = "wavespeed"
+            repair = "gemini-edit"
         if repair and repair not in GENERATORS:
             return self._json({"error": f"unknown generator {repair}"}, 400)
 
@@ -1080,9 +1070,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
         except (ValueError, TypeError):
             return self._json({"error": "bad json"}, 400)
-        allowed = {"WAVESPEED_API_KEY", "GEMINI_API_KEY",
-                   "FRAMEFLOW_ENDPOINT", "FRAMEFLOW_TOKEN",
-                   "SCREENX_ENDPOINT", "SCREENX_TOKEN"}   # pre-rename names still read
+        allowed = {"GEMINI_API_KEY"}
         for name, value in (body or {}).items():
             if name not in allowed:
                 return self._json({"error": f"unknown credential {name}"}, 400)

@@ -17,9 +17,4 @@
 torch>=2.2
 gsplat>=1.0
 
-# Optional: the local diffusion generator, for inventing wings on shots the
-# gate refuses. Everything it produces is labelled GENERATED.
-diffusers>=0.27
-transformers>=4.40
-accelerate>=0.30
 Pillow>=10.0

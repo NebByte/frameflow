@@ -130,7 +130,7 @@ def test_an_unmeasured_cost_is_charged_not_excused():
 
     `repair` divided repainted photographed pixels by total photographed pixels.
     With no provenance map on disk the divisor was zero, so it reported 0.0 --
-    a measured-looking figure for something it had not measured. A WaveSpeed
+    a measured-looking figure for something it had not measured. A repaint
     pass that redrew 94% of a wall was recorded as having cost nothing.
 
     Absence of evidence is charged now, at the share of wing that actually

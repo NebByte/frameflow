@@ -50,8 +50,8 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 W, H, FPS = 1920, 1080, 30
 
-# Sum of the 11 suites run standalone. Bump it when the suites do.
-CHECKS = 651
+# Sum of the 10 suites run standalone. Bump it when the suites do.
+CHECKS = 618
 
 BG = (13, 17, 23)
 FG = (230, 237, 243)

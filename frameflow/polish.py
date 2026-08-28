@@ -544,7 +544,7 @@ def settle(job_dir, k=2, verbose=True):
     return done
 
 
-def repair(job_dir, generator="wavespeed", shots=None, verbose=True,
+def repair(job_dir, generator="gemini-edit", shots=None, verbose=True,
            full=False):
     """
     Regenerate the flagged shots, and tell the truth about what changed.
@@ -954,7 +954,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-settle", action="store_true",
                     help="skip the free local pass that fixes hairlines and "
                          "shimmer using the shot's own photography")
-    ap.add_argument("--repair", nargs="?", const="wavespeed", default=None,
+    ap.add_argument("--repair", nargs="?", const="gemini-edit", default=None,
                     metavar="GENERATOR",
                     help="regenerate what is still faulted after settling "
                          "(costs money for hosted generators)")

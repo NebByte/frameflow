@@ -15,8 +15,8 @@ backwards. Each tier below states how it protects that.
 | | |
 |---|---|
 | Runs on CPU today | shot detection, the four metrics, two backends, the fence, the six-rung ladder, the planner, the licence gate, mirror/inpaint generation, all of `splat.py` except the fit and the render |
-| Needs a GPU, path verified on one | `GaussianBackend`, `SameLocationTool`, `DiffusionGenerator` |
-| Needs credentials | `HostedGenerator` (no GPU) |
+| Needs a GPU, path verified on one | `GaussianBackend`, `SameLocationTool` |
+| Needs credentials | `GeminiImageEdit`, `ApiReasoner` (no GPU) |
 | Never yet fired on real footage | `DONATED`, `RETRIEVED` |
 | Fires, but outside the headline number | `REFERENCED` |
 
@@ -53,7 +53,7 @@ bit-identical to the run with dark walls.
 | 3 | one provenance enum, imported by both fence and ladder | `provenance.py` |
 | 1 | film index, so the scout has something to find | `filmindex.py` |
 | 2 | external material suppliers behind the licence gate | `fetchers.py` |
-| 4 | hosted outpainting adapter, no GPU | `fill.py:112` |
+| 4 | anchored generative repaint, no GPU | `gemini.py` |
 
 **The bug that mattered.** `Director.run()` accepted `corpus_finder`,
 `scene_finder` and `fetcher`; the render pipeline passed none of them. Every
@@ -69,8 +69,8 @@ more than one setup. Candidates are shortlisted to the closest 6 rather than
 offered whole, which turns an N² ORB cost back into N×6.
 
 **Untested:** `OpenverseFetcher` (no network from the build shell) and
-`HostedGenerator` (no credentials). Both are written from the endpoint contract,
-not from a round trip. Expect to adjust `encode`/`decode` per provider.
+`GeminiImageEdit` (no credentials on the build machine). Both are written from
+the endpoint contract, not from a round trip.
 
 ---
 
@@ -132,7 +132,7 @@ own, but the scene's master wide photographed that same wall an hour earlier.
 |---|---|---|
 | 2.1 | `splat.py`, `backends.py` | `GaussianBackend` fits gsplat Gaussians, renders a widened frustum |
 | 2.2 | `agent.py` | `SameLocationTool` renders this shot's pose from a whole-location reconstruction |
-| 2.3 | `fill.py` | `DiffusionGenerator` outpaints, strength driven per-band by `confidence` |
+| 2.3 | `gemini.py` | `GeminiImageEdit` outpaints, anchored to the recovered plate |
 | 2.4 | `remote.py` | job-file protocol so any of it runs on a rented GPU |
 | 2.5 | `gating.py` | `leave_one_out_3d` — the hold-out a 3D backend can actually take |
 | 2.6 | `sfm.py` | builds the COLMAP reconstructions the whole tier depends on |
@@ -265,7 +265,7 @@ that way from the first commit.
 | 3.1 | entity tracking + re-identification across the frame boundary | **done** — `offscreen.py` |
 | 3.2 | **verification harness** — hold out re-entry, score prediction | **done** — `offscreen.score`, `score_calibrated` |
 | 3.3 | off-screen state estimation between the two observations | **done** — `reasoning.LocalReasoner`, scored by 3.2 |
-| 3.4 | conditioned rendering onto the wing, anchored to the recovered plate | **wired** — `wavespeed.py`, shot-level; the wire is untested |
+| 3.4 | conditioned rendering onto the wing, anchored to the recovered plate | **wired** — `gemini.GeminiImageEdit`, shot-level; the wire is untested |
 | 3.5 | context in, prompt out, driven by a model | **done offline** — `context.py`, `reasoning.py`; the API call itself is untested |
 | 3.6 | any file as context, and a human in the loop | **done** — `context.py`, `DirectionStore`, `DIRECTED` |
 
@@ -391,12 +391,18 @@ the real fraction on the grounds that it was "well constrained".
 
 ### 3.4 — the generator slot, and the contract it needed
 
-`select_provider` picks **wavespeed-outpainter**: the only entry in
-`agent.REGISTRY` that is both hosted and `conditions_on_known`. Everything
-scoring higher in that table -- Kling, Runway, Luma -- is unanchored, which makes
-it better at video and useless here. Capability and fitness are inversely
-correlated in this slot, which is why the selector weights anchoring above
-fidelity.
+The slot wants one property above all others: the generator must **condition on
+the recovered plate**. Surveying what was available, the models scoring highest
+on raw video quality were the ones that could not do this -- they generate
+freely, which makes them better at video and useless here, because an
+unanchored wall does not continue the wall the camera actually filmed.
+Capability and fitness are inversely correlated in this slot.
+
+Frameflow fills it with **Gemini**, which anchors. A survey of third-party
+outpainting providers, and a wired-but-untested client for one of them, were
+removed: this project uses Google's AI and nothing else, and the fence below is
+generator-agnostic anyway, so the argument never rested on which vendor sat
+here.
 
 **A structural gap had to close first.** `fill`'s generators take one frame:
 `(canvas, hole, confidence) -> frame`. That is right for `MirrorGenerator`, which
@@ -416,18 +422,16 @@ corrupt the metric -- only waste the call. There is a test that hands the
 pipeline a generator which paints the entire canvas and asserts the filmed
 centre comes back byte-identical.
 
-**Both API halves are wired, neither wire is tested.** There is no outbound
-network on the build machine. `gemini.py` (vision) and `wavespeed.py` (video) are
-covered by 57 assertions through injected transports -- auth, request shape,
-polling through pending states, failure, timeout, mp4 round trip, the fence --
-and the endpoint paths and field names are constructor arguments rather than
-constants because they are the part written from a documented pattern instead of
-a round trip. Check them against the current API before the first real call.
-
-**Provider split:** Gemini serves the vision half (`ApiReasoner.call`), WaveSpeed
-the generator half. A vision model's claims arrive as `asserted`, never
-`measured` -- it is another party making claims about a place it was not present
+**Gemini serves both halves** -- vision through `ApiReasoner.call`, generation
+through `GeminiImageEdit`. A vision model's claims arrive as `asserted`, never
+`measured`: it is another party making claims about a place it was not present
 at, held to the same standard as a script page.
+
+`gemini.py` is covered through injected transports -- auth, request shape,
+polling through pending states, failure, timeout, the fence -- because there is
+no outbound network on the build machine. Endpoint paths and field names are
+constructor arguments rather than constants, since they are the part written
+from a documented pattern instead of a round trip.
 
 ---
 
