@@ -11,7 +11,7 @@ walls from the footage itself, and never lies about what it invented.**
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-58a6ff?style=flat-square)](https://cloud.google.com/vertex-ai)
 [![Agent Builder](https://img.shields.io/badge/Google%20Cloud-Agent%20Builder-4285F4?style=flat-square)](https://cloud.google.com/products/agent-builder)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-MCP-a371f7?style=flat-square)](https://github.com/ClickHouse/mcp-clickhouse)
-[![licence](https://img.shields.io/badge/licence-MIT-6e7681?style=flat-square)](LICENSE)
+[![licence](https://img.shields.io/badge/licence-Apache--2.0-6e7681?style=flat-square)](LICENSE)
 [![checks](https://img.shields.io/badge/checks-642%20passing-3fb950?style=flat-square)](#tests)
 
 Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) — ClickHouse track.
@@ -253,4 +253,8 @@ its own, and each is a standalone finding in the
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Chosen over MIT for the express patent grant and defensive termination: if
+someone sues over patents in this code, their licence to it ends. MIT is silent
+on patents entirely.

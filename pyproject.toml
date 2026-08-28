@@ -4,7 +4,8 @@ version = "0.4.0"
 description = "Triage a film for 270-degree immersive conversion, recover the side walls from its own footage, and never lie about what was invented."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 keywords = ["frameflow", "screenx", "immersive", "cinema", "provenance", "gemini", "adk", "clickhouse"]
 
 dependencies = [
