@@ -9,11 +9,13 @@ requirement without anybody having to record themselves.
 
     python tools/make_demo_video.py -o demo.mp4
 
-ADDING THE VOICE-OVER
----------------------
-The picture follows the voice, not the other way round: DURATIONS below is set
-so the cut lands on the length of the recorded read. To remix after a re-record,
-measure the new take, adjust DURATIONS, rebuild, then:
+ADDING A VOICE-OVER
+-------------------
+Optional, and the cut does not depend on it -- a take was recorded, reviewed by
+an audio model, and rejected (repeated false starts, several misread words), so
+the shipped video is the silent one. The picture follows the voice and not the
+other way round, so a usable take means re-measuring it, stretching DURATIONS
+below to match, rebuilding, and then:
 
     ffmpeg -i vo.m4a -ac 1 -ar 48000 vo_raw.wav
     ffmpeg -i vo_raw.wav -af "highpass=f=85,afftdn=nr=12:nf=-32,deesser=i=0.4,      equalizer=f=220:t=q:w=1.2:g=-2,equalizer=f=3200:t=q:w=1.4:g=2.5,      acompressor=threshold=-20dB:ratio=3:attack=8:release=180:makeup=2,      loudnorm=I=-16:TP=-1.5:LRA=9" vo_clean.wav
@@ -167,20 +169,30 @@ def caption(img, lines, y=None, small=False):
     return img
 
 
-# How long each scene runs, in seconds. These exist because the cut has to fit a
-# voice-over: the silent version was 103s and the read is 164s, so the picture
-# follows the voice rather than the other way round. Footage scenes are capped by
-# how much footage there actually is -- the gym master is 799 frames, which is
-# 26.6s at 30fps and no more.
+# How long each scene runs, in seconds -- paced so the captions can be READ,
+# because they carry the argument on their own.
+#
+# These were briefly stretched to 164s to sit under a voice-over. That take did
+# not survive review (repeated false starts, and misread words in the half that
+# was otherwise usable), and a stretched cut with no voice over it is just a
+# slow cut: every slide sits ~60% longer than it needs to be read. So the
+# timings are back to reading pace. If narration is ever added, re-measure the
+# take and stretch these again -- picture follows voice, not the reverse.
+#
+# Reading pace is not one constant, and these were set by watching the cut
+# rather than by taste: a slide whose numbers have to be COMPARED (settle's
+# before/after, the ledger table) needs roughly twice what a prose slide needs.
+# Footage scenes are capped by how much usable footage there is -- see
+# CLEAN_BANDS below.
 DURATIONS = {
-    "scene_title": 16.0,
-    "scene_refusal": 17.0,
-    "scene_conversion": 26.4,
-    "scene_feeds": 20.0,
-    "scene_lines": 16.0,
-    "scene_settle": 15.0,
-    "scene_ledger": 30.0,
-    "scene_close": 23.0,
+    "scene_title": 14.0,   # four lines, and the last one needs a beat
+    "scene_refusal": 14.0,   # the green refusal needs to breathe before the next line
+    "scene_conversion": 16.7,  # exactly the clean stretches below, nothing trimmed
+    "scene_feeds": 14.0,
+    "scene_lines": 12.0,
+    "scene_settle": 14.0,    # four before/after rows to compare, not read
+    "scene_ledger": 26.0,    # the money slide: table, then the conclusion under it
+    "scene_close": 16.0,     # URLs a judge may want to copy
 }
 
 
@@ -263,14 +275,34 @@ def scene_refusal(reel):
     reel.hold(img, max(1.0, DURATIONS['scene_refusal'] - 6.6))
 
 
+# Stretches of the gym master whose wings are actually filled, as frame indices.
+#
+# Effective coverage on this take is 52.5%, and an unfilled wing renders black --
+# which is truthful (a projector with nothing to show is dark) but arrives as a
+# ~1-second flash on three occasions, and a flash reads as a bug rather than as
+# the honest refusal it is. Measured over all 799 frames, wings below 12/255:
+#
+#     0-75     97.8% black    the shot's opening, before any donor exists
+#     330-366  49.8%          -.
+#     577-601  50.3%           |- the camera reaching somewhere it had not filmed
+#     782-798  50.0%          -'
+#
+# So the scene plays the three long clean stretches instead of one trailing band.
+# Cutting between them is honest -- the coverage figure on screen is the average
+# across the WHOLE take, spikes included, not across what is shown here.
+CLEAN_BANDS = [(138, 329), (367, 528), (634, 781)]   # 6.4s + 5.4s + 4.9s
+
+
 def scene_conversion(reel):
     """The film itself, and the number that matters beside it."""
     src = ROOT / "jobs" / "gym_hd" / "deliverable" / "master_widened.mp4"
     frames = read_clip(src)
     if not frames:
         return
+    band = [frames[i] for a, b in CLEAN_BANDS
+            for i in range(a, min(b + 1, len(frames)))] or frames
     want = int(DURATIONS['scene_conversion'] * FPS)
-    band = frames[max(0, len(frames) - want):][:want] or frames
+    band = band[:want]
 
     for i, f in enumerate(band):
         img = np.full((H, W, 3), BG[::-1], np.uint8)
@@ -324,7 +356,9 @@ def scene_lines(reel):
         text(d, (W * 0.71, 150), "AFTER", F(40, True), GREEN, anchor="ma")
         text(d, (W * 0.29, 900), "2.67% of columns are dark lines", F(32), DIM, anchor="ma")
         text(d, (W * 0.71, 900), "0.00%", F(32), DIM, anchor="ma")
-        if i > 90:
+        # Up after 1s, not 3: this line is the point of the whole scene, and
+        # holding it back left it competing with a comparison already in motion.
+        if i > 30:
             text(d, (110, 975),
                  "A bug, not a limit: the donor was sampled against a black border "
                  "while its mask was not.", F(30), BLUE)

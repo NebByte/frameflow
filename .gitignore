@@ -57,3 +57,4 @@ docs/SUBMISSION.md
 
 # The built video. Regenerate with: python tools/make_demo_video.py
 frameflow_demo_video.mp4
+frameflow_demo_preview.mp4
