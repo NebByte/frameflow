@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Frameflow — which shots can we earn?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark light; --bg:#0d1117; --fg:#e6edf3; --dim:#8b949e;
+          --line:#30363d; --acc:#58a6ff; --real:#3fb950; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6
+         ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 56px 22px 80px; }
+  h1 { font-size: 15px; letter-spacing:.14em; text-transform:uppercase;
+       color:var(--dim); font-weight:600; margin:0 0 6px; }
+  h2 { font-size: 30px; line-height:1.25; margin:0 0 18px; font-weight:650; }
+  p  { color:#c9d1d9; }
+  .lede { font-size:18px; }
+  .grid { display:grid; gap:10px; margin:26px 0 8px; }
+  a.card { display:block; padding:14px 16px; border:1px solid var(--line);
+           border-radius:10px; text-decoration:none; color:var(--fg);
+           background:#161b22; transition:border-color .15s, transform .15s; }
+  a.card:hover { border-color:var(--acc); transform:translateY(-1px); }
+  a.card b { color:var(--acc); font-weight:600; }
+  a.card span { display:block; color:var(--dim); font-size:13.5px; margin-top:3px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:26px; }
+  .row a { padding:9px 15px; border:1px solid var(--line); border-radius:8px;
+           text-decoration:none; color:var(--fg); font-size:14px; background:#161b22; }
+  .row a:hover { border-color:var(--acc); }
+  .facts { border-top:1px solid var(--line); margin-top:34px; padding-top:20px;
+           font-size:14px; color:var(--dim); }
+  .facts b { color:var(--real); }
+  code { background:#161b22; border:1px solid var(--line); border-radius:5px;
+         padding:1px 6px; font-size:13px; }
+</style>
+<main>
+  <h1>Frameflow</h1>
+  <h2>Which shots can we earn?</h2>
+  <p class="lede">Converting a film to a 270&deg; format takes about two months
+    per title, and most of that goes on a question that isn&rsquo;t an art
+    problem: <em>which shots are even possible</em>. A panning camera already
+    photographed the side walls. A locked-off close-up never did.</p>
+  <p>Frameflow answers that in seconds per shot, recovers the walls it can from
+    the film&rsquo;s own footage, and never counts an invented pixel as a
+    photographed one.</p>
+
+  <div class="grid">
+    <a class="card" href="/dev-ui/">
+      <b>&ldquo;Is locked_off.mp4 worth converting?&rdquo;</b>
+      <span>A camera that never moved. Watch it refuse, and say why.</span>
+    </a>
+    <a class="card" href="/dev-ui/">
+      <b>&ldquo;Triage pan_flat.mp4 &mdash; which shots are worth an artist week?&rdquo;</b>
+      <span>Per-shot verdicts, geometry in dB, coverage as a floor.</span>
+    </a>
+    <a class="card" href="/dev-ui/">
+      <b>&ldquo;Convert it, then settle the walls.&rdquo;</b>
+      <span>Three projector feeds, plus what the settle pass fixed for free.</span>
+    </a>
+  </div>
+
+  <div class="row">
+    <a href="/dev-ui/">Open the agent &rarr;</a>
+    <a href="/studio/">Frameflow Studio &mdash; upload your own clip</a>
+    <a href="https://github.com/NebByte/frameflow">Source</a>
+  </div>
+
+  <div class="facts">
+    Measured on real footage, CPU only, no model involved:
+    caf&eacute; <b>98.7%</b>, apartment <b>99.3%</b>, a 27s gym pan
+    <b>90.4%</b> genuinely photographed side wall.
+    Rendering your own clip takes roughly <code>2 min</code> for a few seconds of
+    footage &mdash; triage is the fast one.
+  </div>
+</main>

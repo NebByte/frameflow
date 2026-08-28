@@ -37,7 +37,8 @@ from pathlib import Path
 # which points nowhere near the cause.
 import httpx
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import (HTMLResponse, JSONResponse,
+                               RedirectResponse, Response)
 
 HERE = Path(__file__).resolve().parent
 STUDIO_PORT = int(os.environ.get("STUDIO_PORT", "8421"))
@@ -76,6 +77,18 @@ def build():
     start_studio()
     client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{STUDIO_PORT}",
                                timeout=httpx.Timeout(600.0))
+
+    @api.get("/", include_in_schema=False)
+    async def landing():
+        """
+        A judge pasting the bare URL used to be redirected straight into a chat
+        box with no indication of what to ask it. Three clickable questions and
+        two sentences of context cost nothing and answer "what is this".
+        """
+        page = HERE / "static" / "landing.html"
+        if not page.is_file():
+            return RedirectResponse("/dev-ui/")
+        return HTMLResponse(page.read_text(encoding="utf-8"))
 
     @api.get("/status")
     async def status():
@@ -118,6 +131,16 @@ def build():
             content=r.content, status_code=r.status_code,
             headers={k: v for k, v in r.headers.items() if k.lower() not in drop},
             media_type=r.headers.get("content-type"))
+
+    # ADK already owns "/" (it redirects into the dev UI) and its route was
+    # registered first, so a later one never matches. Starlette resolves in
+    # order, so the landing page has to be moved to the front rather than
+    # merely added.
+    for i, r in enumerate(api.router.routes):
+        if getattr(r, "path", None) == "/" and "landing" in getattr(
+                getattr(r, "endpoint", None), "__name__", ""):
+            api.router.routes.insert(0, api.router.routes.pop(i))
+            break
 
     return api
 

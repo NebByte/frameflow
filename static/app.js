@@ -49,6 +49,24 @@ const FLAGS = [
     note: "external, needs network", needs: null },
 ];
 
+
+/* The key box belongs to one paid, optional generator, and showing it to
+   everyone reads as "this needs credentials" -- which is exactly backwards.
+   The whole argument of this tool is that the walls come out of the footage
+   for free. So it stays hidden until somebody actually picks a generator that
+   needs one, and it says so when it appears. */
+const HOSTED = new Set(["wavespeed", "gemini-edit", "hosted"]);
+
+function syncKeyPanel() {
+  const panel = $("#keypanel");
+  if (!panel) return;
+  const picked = [$("#dark"), $("#polishgen")]
+    .filter(Boolean).map(el => el.value);
+  const needs = picked.some(v => HOSTED.has(v));
+  const already = state.caps && state.caps.wavespeed && state.caps.wavespeed.ok;
+  panel.hidden = !needs || already;
+}
+
 async function loadCaps() {
   const caps = state.caps = await (await fetch("/api/capabilities")).json();
   $("#caps").innerHTML = Object.entries(caps).map(([, c]) => `
@@ -56,6 +74,8 @@ async function loadCaps() {
       <span style="color:${c.ok ? "var(--real)" : "var(--ink-faint)"}">${c.ok ? "●" : "○"}</span>
       <span>${esc(c.label)}${c.ok ? "" : `<span class="why">${esc(c.reason)}</span>`}</span>
     </div>`).join("");
+
+  syncKeyPanel();
 
   $("#flags").innerHTML = FLAGS.map(f => {
     const cap = f.needs ? caps[f.needs] : null;
@@ -268,6 +288,8 @@ function showCommand() {
   });
   $("#cmd").textContent = parts.join(" ");
 }
+$$("#dark,#polishgen").forEach(el =>
+  el && el.addEventListener("change", syncKeyPanel));
 $$("#maxw,#fps,#maxshots,#rotate,#dark,#wing,#screen_width,#screen_height,#viewer_distance,#gate_geometry,#gate_full,#gate_narrow,#gate_detail,#gate_stale")
   .forEach(el => el.addEventListener("change", showCommand));
 

@@ -126,6 +126,14 @@ def triage_film(video: str, max_shots: int = 0, working_width: int = 480) -> dic
         Per-shot verdicts (FULL / NARROW / BORROWED / GEN / OFF / LOCKED) with
         geometry dB and effective coverage, plus how much of the running time
         can be widened from the film's own photography.
+
+        Also `recommended`: what to render this clip at, and roughly how long
+        that takes. ALWAYS pass this on before anyone starts a render. The
+        defaults are tuned to finish quickly, not to produce the best film --
+        640px discards resolution the camera already captured, and a 200-frame
+        cap on a 27-second take delivers under seven seconds. Give both the
+        recommended settings and the faster alternative, with the times, and
+        let the person choose.
     """
     path = _resolve(video)
     if path is None:

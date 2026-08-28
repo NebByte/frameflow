@@ -123,6 +123,73 @@ def triage_shot(frames, tracker=None, thresholds=None, wing=None, probes=2):
     return out
 
 
+# Seconds per rendered frame, measured rather than modelled. Two real runs:
+#
+#   480px   0.9 s/frame  (laptop CPU)  ~1.2 on a 4-vCPU Cloud Run instance
+#   1024px  9.0 s/frame  (laptop CPU)  799 frames in about two hours
+#
+# That is steeper than the 4.5x the pixel count alone implies, because a wider
+# wing needs donors from further back and the settle pass grows with it. Two
+# points is not a curve, so this interpolates between them and says so.
+COST = {480: 0.9, 1024: 9.0}
+
+
+def estimate_seconds(frames: int, maxw: int) -> float:
+    """Roughly how long a render will take. Wrong by a factor on new hardware."""
+    lo, hi = 480, 1024
+    if maxw <= lo:
+        per = COST[lo] * (maxw / lo) ** 2
+    elif maxw >= hi:
+        per = COST[hi] * (maxw / hi) ** 2
+    else:
+        t = (maxw - lo) / (hi - lo)
+        per = COST[lo] + t * (COST[hi] - COST[lo])
+    return frames * per
+
+
+def recommend(source_width: int, total_frames: int, longest_shot: int, fps: float):
+    """
+    What to render this clip at, and what it will cost.
+
+    The defaults exist to keep a first run short, and on a good clip they throw
+    away most of what makes it good: 640px discards resolution the camera
+    already captured, and a 200-frame cap on a 27-second take delivers under
+    seven seconds of film. Both are traps precisely because they are defaults --
+    somebody presses go, gets a worse result than the tool is capable of, and
+    concludes that is what the tool does.
+
+    Everything needed to avoid that is already known by the time triage has run:
+    how wide the source is, how long the shots are, and what a frame costs.
+    """
+    native = int(max(320, min(source_width, 1920)))
+    frames = int(max(1, longest_shot))
+    full = estimate_seconds(total_frames, native)
+    fast = estimate_seconds(total_frames, 480)
+    return dict(
+        maxw=native,
+        frames_per_shot=frames,
+        est_seconds=int(full),
+        est_human=_human(full),
+        fast_maxw=480,
+        fast_est_human=_human(fast),
+        why=(f"source is {source_width}px wide, so anything under {native} "
+             f"discards resolution the camera already captured; the longest "
+             f"shot is {frames} frames ({frames / max(fps, 1):.1f}s), so a "
+             f"lower cap would cut it off"),
+        caveat="timings are interpolated from two measured runs and will be "
+               "wrong by a factor on different hardware",
+    )
+
+
+def _human(sec: float) -> str:
+    sec = int(sec)
+    if sec < 90:
+        return f"{sec}s"
+    if sec < 5400:
+        return f"about {round(sec / 60)} min"
+    return f"about {sec / 3600:.1f} hours"
+
+
 def triage_film(path, maxw=480, window=WINDOW, max_shots=None, rotate=0,
                 thresholds=None, verbose=True, on_shot=None):
     """
@@ -144,6 +211,7 @@ def triage_film(path, maxw=480, window=WINDOW, max_shots=None, rotate=0,
 
     cap = cv2.VideoCapture(str(path))
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 24.0)
+    src_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     tracker = wc.Tracker()
     verdicts = []
     for si, (a, b) in enumerate(shots):
@@ -169,6 +237,8 @@ def triage_film(path, maxw=480, window=WINDOW, max_shots=None, rotate=0,
 
     earned = [v for v in verdicts if v["state"] in ("FULL", "NARROW", "BORROWED")]
     secs = sum(v["seconds"] for v in verdicts) or 1.0
+    longest = max((v["shot_frames"] for v in verdicts), default=0)
+    total = sum(v["shot_frames"] for v in verdicts)
     return dict(
         source=str(path).replace("\\", "/").rsplit("/", 1)[-1],
         fps=round(fps, 3), shots=len(verdicts),
@@ -178,6 +248,7 @@ def triage_film(path, maxw=480, window=WINDOW, max_shots=None, rotate=0,
         earned_fraction=round(sum(v["seconds"] for v in earned) / secs, 4),
         basis=(f"a {window}-frame window per shot. A full render holds more "
                f"footage and recovers more, so these are floors, not estimates"),
+        recommended=recommend(src_w, total, longest, fps),
         verdicts=verdicts,
     )
 
@@ -205,6 +276,14 @@ def main(argv=None):
               f"their own footage -- {rep['earned_seconds']:.1f}s of "
               f"{rep['seconds']:.1f}s ({rep['earned_fraction']*100:.0f}%)")
         print(f"basis: {rep['basis']}")
+        r = rep.get("recommended") or {}
+        if r:
+            print("")
+            print(f"to render it: --maxw {r['maxw']} --frames-per-shot "
+                  f"{r['frames_per_shot']}   ({r['est_human']})")
+            print(f"  {r['why']}")
+            print(f"  faster: --maxw {r['fast_maxw']} ({r['fast_est_human']}), "
+                  f"smaller and softer")
     return rep
 
 
