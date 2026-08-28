@@ -97,11 +97,29 @@ def build():
         that path itself before it reaches the container, so the route existed
         in the OpenAPI schema and returned Google's own 404 in production.
         """
+        import shutil
+
         from frameflow import ledger
+
+        # What the AGENT sees, not just what the environment holds. The two
+        # disagreed once: /status reported the ledger configured while the
+        # archivist told users it was not, because the toolset had failed to
+        # build and only the agent knew.
+        agents = {}
+        try:
+            from agent_service.agent import root_agent
+            for sub in [root_agent] + list(root_agent.sub_agents or []):
+                agents[sub.name] = [getattr(t, "__name__", type(t).__name__)
+                                    for t in (sub.tools or [])]
+        except Exception as e:
+            agents["error"] = f"{type(e).__name__}: {e}"
+
         return JSONResponse(dict(
             ok=True,
             agent="frameflow_supervisor",
             ledger="configured" if ledger.settings() else "not configured",
+            uvx=bool(shutil.which("uvx")),
+            agents=agents,
             studio_port=STUDIO_PORT,
         ))
 

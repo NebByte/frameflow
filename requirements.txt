@@ -19,6 +19,24 @@ google-adk>=2.8
 #     server (`uvx mcp-clickhouse`); this client is what writes the rows.
 clickhouse-connect>=0.8
 
+# The MCP SDK. NOT a dependency of google-adk, and it was installed on the
+# development machine by something else -- so McpToolset built locally, failed
+# silently in the container, and the archivist told users the ledger was not
+# connected while /status said it was.
+# Capped below 2.0. `mcp.shared.session` -- which google-adk's McpToolset
+# imports -- was removed in the 2.x layout, so an unpinned install resolves to
+# 2.1.1 and the toolset fails with ModuleNotFoundError. It imported fine on the
+# dev machine because that had 1.27.0 already installed, so the break only
+# appeared in the container.
+mcp>=1.27,<2
+
+# The ClickHouse MCP server itself, installed rather than fetched on demand.
+# `uvx mcp-clickhouse` downloads the package the first time it runs, which
+# takes far longer than ADK's 5-second session timeout -- so every ledger query
+# failed with "timed out waiting for the session to become ready" while the
+# toolset itself looked perfectly healthy.
+mcp-clickhouse>=0.4
+
 # --- serving. ADK already depends on fastapi and uvicorn; pinned here anyway
 #     because server.py imports them directly and a transitive dependency is
 #     not a promise.

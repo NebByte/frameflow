@@ -49,6 +49,7 @@ spends most of its length on it.
 from __future__ import annotations
 
 import os
+import shutil
 
 from google.adk.agents import LlmAgent
 
@@ -189,7 +190,8 @@ def _clickhouse_toolset():
     if cfg is None:
         return None
     from google.adk.tools import McpToolset
-    from google.adk.tools.mcp_tool.mcp_session_manager import StdioServerParameters
+    from google.adk.tools.mcp_tool.mcp_session_manager import (
+        StdioConnectionParams, StdioServerParameters)
 
     env = {
         "CLICKHOUSE_HOST": cfg["host"],
@@ -199,13 +201,25 @@ def _clickhouse_toolset():
         "CLICKHOUSE_DATABASE": cfg["database"],
         "CLICKHOUSE_SECURE": "true" if cfg["secure"] else "false",
     }
+    # `mcp-clickhouse` is installed (see requirements.txt), not fetched via
+    # `uvx` at call time: the download blows straight through ADK's 5-second
+    # session timeout, and the failure surfaces as a timeout rather than as a
+    # missing package. Fall back to uvx only if the console script is absent.
+    command = shutil.which("mcp-clickhouse")
+    server = (StdioServerParameters(command=command, args=[],
+                                    env={**os.environ, **env})
+              if command else
+              StdioServerParameters(command="uvx", args=["mcp-clickhouse"],
+                                    env={**os.environ, **env}))
+    # 60s, not the 5s default. A ClickHouse Cloud service scales to zero when
+    # idle, so the first query after a pause pays for the service waking plus a
+    # TLS handshake -- comfortably past five seconds. The failure reads as
+    # "timed out waiting for response", which looks like a broken tool rather
+    # than a cold database, and the agent duly told users the ledger was not
+    # connected while the query itself was executing fine.
     return McpToolset(
-        connection_params=StdioServerParameters(
-            command="uvx", args=["mcp-clickhouse"],
-            env={**os.environ, **env},
-        ),
-        tool_name_prefix="ledger",
-    )
+        connection_params=StdioConnectionParams(server_params=server, timeout=60.0),
+        tool_name_prefix="ledger")
 
 
 def build_agent():
@@ -231,7 +245,11 @@ def build_agent():
     try:
         ch = _clickhouse_toolset()
     except Exception as e:                        # a bad DSN must not stop the app
-        ch, note = None, f" ({type(e).__name__})"
+        ch, note = None, f" ({type(e).__name__}: {e})"[:120]
+        # Loud, because the quiet version cost a deploy: credentials were
+        # present, /status said "configured", and only the archivist knew the
+        # toolset had never been built.
+        print(f"  ledger toolset unavailable: {type(e).__name__}: {e}", flush=True)
     if ch is not None:
         kit.append(ch)
     archivist = LlmAgent(
