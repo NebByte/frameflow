@@ -47,3 +47,7 @@ demos/
 # attribution is a violation regardless. Fetch it yourself if you want it:
 #   https://commons.wikimedia.org/wiki/File:Drone_flight_over_park.webm
 media/drone.mp4
+
+# The Devpost draft. It carries the entrant email and reads as scaffolding
+# ("copy from here", "link to add") rather than as part of the product.
+docs/SUBMISSION.md
