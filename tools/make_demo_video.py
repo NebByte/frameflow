@@ -152,17 +152,29 @@ def caption(img, lines, y=None, small=False):
     return img
 
 
+def place_logo(img: Image.Image, xy, box):
+    """
+    Composite the wordmark, honouring its alpha.
+
+    It used to be pasted as RGB, which carried the white plate it was cut from
+    straight onto a near-black slide. The mark is transparent now, so it has to
+    go down as a mask rather than a rectangle.
+    """
+    path = ROOT / "docs" / "img" / "logo.png"
+    if not path.is_file():
+        return
+    lg = Image.open(path).convert("RGBA")
+    lg.thumbnail(box, Image.LANCZOS)
+    img.paste(lg, xy, lg)
+
+
 # ------------------------------------------------------------------ scenes
 
 def scene_title(reel):
     """The problem, with the numbers that make it a problem."""
     img = canvas()
     d = ImageDraw.Draw(img)
-    logo = ROOT / "docs" / "img" / "logo.png"
-    if logo.is_file():
-        lg = Image.open(logo).convert("RGB")
-        lg.thumbnail((560, 200), Image.LANCZOS)
-        img.paste(lg, (110, 240))
+    place_logo(img, (110, 250), (620, 150))
     text(d, (110, 470), "Which shots can we earn?", F(76, True), FG)
     text(d, (110, 580),
          "Converting a film to a 270\u00b0 format takes about two months per title.\n"
@@ -420,11 +432,7 @@ def scene_close(reel):
 
     img = canvas()
     d = ImageDraw.Draw(img)
-    logo = ROOT / "docs" / "img" / "logo.png"
-    if logo.is_file():
-        lg = Image.open(logo).convert("RGB")
-        lg.thumbnail((620, 220), Image.LANCZOS)
-        img.paste(lg, (110, 330))
+    place_logo(img, (110, 340), (680, 165))
     text(d, (110, 560), "Gemini \u00b7 Agent Builder \u00b7 Cloud Run \u00b7 ClickHouse MCP",
          F(38), DIM)
     text(d, (110, 650), "frameflow-460687416455.us-central1.run.app", F(36), BLUE)
