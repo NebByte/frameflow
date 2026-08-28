@@ -25,7 +25,7 @@ generative = ["diffusers>=0.27", "transformers>=4.40", "accelerate>=0.30", "Pill
 
 [project.urls]
 Homepage = "https://github.com/NebByte/frameflow"
-Demo = "https://screenx-agent-460687416455.us-central1.run.app"
+Demo = "https://frameflow-460687416455.us-central1.run.app"
 
 [project.scripts]
 frameflow-triage = "frameflow.triage:main"

@@ -2,7 +2,7 @@
 
 One run of a 53.8 s handheld apartment walk, everything switched on:
 
-    python screenx_render.py IMG_0803.MOV -o out --maxw 480 \
+    python -m frameflow.render IMG_0803.MOV -o out --maxw 480 \
         --frames-per-shot 120 --context apartment.srt \
         --wings-on-dark mirror --sources --online
 
@@ -48,7 +48,7 @@ the material was matched.
 
 A run reported `mean_real_wing` and nothing else about provenance, so
 "DONATED fired" was not a checkable claim -- the label lived in the pixels and
-never in the summary. `screenx_summary.json` now carries `provenance` and
+never in the summary. the run summary now carries `provenance` and
 `rungs_fired`, per shot and overall, computed from `agent.WingAgent.report`
 rather than recounted by hand. The interface shows both.
 

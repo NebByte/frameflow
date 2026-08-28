@@ -44,6 +44,7 @@ from . import gating as g
 from . import shotdetect as sd
 from . import walls as wl
 from . import wingcoverage as wc
+from . import artifacts as af
 WING = 0.22          # the geometrically projectable width; see walls.wall_extent
 SAME_PLACE = "declared_location"   # scene id for clips the user says share a wall
 SETUP_ID_BASE = 10000              # keeps --also shot ids clear of the primary's
@@ -311,7 +312,7 @@ def checkpoint(outdir, records, source, partial=True):
     payload = dict(source=os.path.basename(source), partial=partial,
                    shots=len(records), per_shot=records)
     try:
-        path = os.path.join(outdir, "screenx_summary.json")
+        path = os.path.join(outdir, af.SUMMARY)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=1, default=str)
     except OSError:
@@ -946,7 +947,7 @@ def run(path, outdir="jobs/cli", maxw=480, max_shots=None,
     H, W = sheet0.shape[:2]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    vw = cv2.VideoWriter(f"{outdir}/screenx_demo.mp4", fourcc, fps, (W, H))
+    vw = cv2.VideoWriter(f"{outdir}/{af.DEMO}", fourcc, fps, (W, H))
 
     n = len(rendered)
     for i, (canvas, prov) in enumerate(rendered):
@@ -961,7 +962,7 @@ def run(path, outdir="jobs/cli", maxw=480, max_shots=None,
                     0.5, (0, 0, 255) if reveal else (200, 200, 200), 1, cv2.LINE_AA)
         vw.write(sheet)
     vw.release()
-    to_h264(os.path.join(outdir, "screenx_demo.mp4"), fps)
+    to_h264(os.path.join(outdir, af.DEMO), fps)
 
     if deliver:
         write_deliverable(Path(deliver), rendered, ww, theatre, fps)
@@ -1035,7 +1036,7 @@ def run(path, outdir="jobs/cli", maxw=480, max_shots=None,
         extent=probe["extent"],
         per_shot=records,
     )
-    with open(f"{outdir}/screenx_summary.json", "w") as fh:
+    with open(f"{outdir}/{af.SUMMARY}", "w") as fh:
         json.dump(summary, fh, indent=2, default=float)
     return summary
 

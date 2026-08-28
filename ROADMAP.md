@@ -41,7 +41,7 @@ fast-cut, locked-off footage never photographs the periphery in the first place.
 - `demo.py` — one command, synthetic footage with ground truth, report in the browser
 - `serve.py` — drop a clip in the browser, LAN-shareable, queue, licence-free
 - `MirrorGenerator` + `--wings-on-dark` — light the walls on shots the gate refuses
-- `screenx_render.py:73` `synth_wings()` — invents a wing without touching the metric
+- `frameflow/render.py` `synth_wings()` — invents a wing without touching the metric
 
 **Verified:** turning wings on for 73 of 78 shots left `mean_real_wing` at 3.36%,
 bit-identical to the run with dark walls.
@@ -149,7 +149,7 @@ that file**, so this section can carry measurements like every other section
 instead of an assurance.
 
 ```
-python verify_gpu.py          # checks the CUDA path against known truth
+python tools/verify_gpu.py    # checks the CUDA path against known truth
 ```
 
 Free Colab is enough for it — `colab_verify.ipynb` is the notebook. Set the

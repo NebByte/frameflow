@@ -18,6 +18,8 @@ from __future__ import annotations
 import sys as _sys, pathlib as _pathlib
 _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent))
 
+from frameflow import artifacts as af
+
 import json
 import re
 from pathlib import Path
@@ -364,7 +366,7 @@ def test_a_rehydrated_job_is_a_whole_job():
     print("\na job read back off disk is shaped like a fresh one")
     fresh = set(app.new_job("probe.mp4"))
     jid = next((d.name for d in sorted(app.JOBS_DIR.iterdir(), reverse=True)
-                if d.is_dir() and (d / "screenx_summary.json").exists()), None)
+                if d.is_dir() and af.has_summary(d)), None)
     app.JOBS.clear()
     if jid is None:
         check("no finished job on disk to check against", True, "skipped")
@@ -447,7 +449,8 @@ def test_polish_is_reachable_and_priced():
     # would report pixels as filmed that a model drew a minute ago
     body = src.split("def run_polish")[1][:2200]
     check("a repaired run re-reads its restated summary",
-          "screenx_summary.json" in body and 'job["summary"]' in body)
+          ("af.summary_path" in body or "frameflow_summary" in body)
+          and 'job["summary"]' in body)
     check("the browser re-renders the report after a repaint",
           "renderReport(); renderReview()" in
           js.split("async function pollPolish")[1].split("\nfunction ")[0])

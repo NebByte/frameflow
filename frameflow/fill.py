@@ -121,7 +121,7 @@ class HostedGenerator:
                         encode=lambda canvas, hole, conf: {...json body...},
                         decode=lambda payload: rgb_array)
 
-    Reads SCREENX_ENDPOINT and SCREENX_TOKEN from the environment when not
+    Reads FRAMEFLOW_ENDPOINT and FRAMEFLOW_TOKEN from the environment when not
     passed. Compositing and the fence stay on this side: the endpoint returns a
     full frame and never decides which pixels are kept.
 
@@ -131,8 +131,12 @@ class HostedGenerator:
     name = "hosted"
 
     def __init__(self, url=None, token=None, encode=None, decode=None, timeout=120):
-        self.url = url or os.environ.get("SCREENX_ENDPOINT", "")
-        self.token = token or os.environ.get("SCREENX_TOKEN", "")
+        # the pre-rename names still work, so an existing shell profile does
+        # not silently stop supplying an endpoint
+        self.url = (url or os.environ.get("FRAMEFLOW_ENDPOINT", "")
+                    or os.environ.get("SCREENX_ENDPOINT", ""))
+        self.token = (token or os.environ.get("FRAMEFLOW_TOKEN", "")
+                      or os.environ.get("SCREENX_TOKEN", ""))
         self.encode = encode
         self.decode = decode
         self.timeout = timeout
@@ -162,8 +166,8 @@ class HostedGenerator:
     def __call__(self, canvas, hole, confidence):
         if not self.url:
             raise RuntimeError(
-                "HostedGenerator needs an endpoint. Set SCREENX_ENDPOINT (and "
-                "SCREENX_TOKEN), or pass url=. Use MirrorGenerator to stay local."
+                "HostedGenerator needs an endpoint. Set FRAMEFLOW_ENDPOINT (and "
+                "FRAMEFLOW_TOKEN), or pass url=. Use MirrorGenerator to stay local."
             )
         body = (self.encode or self._default_encode)(canvas, hole, confidence)
         req = urllib.request.Request(

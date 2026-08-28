@@ -1,5 +1,12 @@
 # wingcoverage
 
+> **This is the historical log.** It records how each decision was reached, in
+> the order it happened, including the measurements that turned out wrong and
+> the two changes that were reverted. Commands and module paths in it are as
+> they were at the time: the project has since been reorganised into packages
+> and renamed to **Frameflow**. For how to run it today see the
+> [README](../README.md) and [QUICKSTART](../QUICKSTART.md).
+
 **Measure how much of a ScreenX-style side wall is recovered real footage — before generating anything.**
 
 Every camera move already filmed the periphery; cropping threw it away. This

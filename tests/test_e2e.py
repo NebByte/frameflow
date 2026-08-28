@@ -38,6 +38,8 @@ from __future__ import annotations
 import sys as _sys, pathlib as _pathlib
 _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent))
 
+from frameflow import artifacts as af
+
 import json
 import shutil
 import socket
@@ -229,7 +231,7 @@ def _render(s, jid, job_dir):
         return
 
     # ---- the summary
-    summary_path = job_dir / "screenx_summary.json"
+    summary_path = af.summary_path(job_dir)
     check("a summary is written", summary_path.exists())
     if not summary_path.exists():
         return
@@ -246,7 +248,7 @@ def _render(s, jid, job_dir):
     # ---- THE CODEC BUG. Every video this tool wrote was mp4v for weeks, which
     # no browser decodes, and it stayed invisible because each one was
     # transcoded by hand before anybody watched it.
-    vids = [p for p in deliv.rglob("*.mp4")] + [job_dir / "screenx_demo.mp4"]
+    vids = [p for p in deliv.rglob("*.mp4")] + [af.demo_path(job_dir)]
     vids = [p for p in vids if p.is_file()]
     bad = [p.name for p in vids if codec_of(p) != "h264"]
     check("every video written is h264, so a browser can play it",
@@ -414,7 +416,7 @@ def _polish(job_dir, summary, segs):
         # photography, so it may change how a recovered pixel looks and may not
         # change what is recovered. If this drifts, a free pass starts moving
         # the one number the whole tool exists to keep honest.
-        restated = json.loads((Path(job_dir) / "screenx_summary.json")
+        restated = json.loads(af.summary_path(job_dir)
                               .read_text(encoding="utf-8"))
         check("and it does not move the headline, because it invented nothing",
               abs(float(restated.get("mean_real_wing") or 0.0) - before_real) < 1e-9,
@@ -471,7 +473,7 @@ def _polish(job_dir, summary, segs):
           "the wall costs something",
           (moved < 0.01) == (lost < 0.01), f"moved {moved:.3f} lost {lost:.3f}")
 
-    after = json.loads((Path(job_dir) / "screenx_summary.json")
+    after = json.loads(af.summary_path(job_dir)
                        .read_text(encoding="utf-8"))
     check("the run is marked polished", after.get("polished") is True)
     check("and the headline never rises because of a repaint",

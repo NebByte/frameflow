@@ -62,7 +62,7 @@
   <!-- clickhouse -->
   <rect class="box db" x="700" y="252" width="176" height="116" rx="8"/>
   <text class="h" x="788" y="280" text-anchor="middle">ClickHouse</text>
-  <text class="t" x="788" y="301" text-anchor="middle">screenx_shots</text>
+  <text class="t" x="788" y="301" text-anchor="middle">frameflow_shots</text>
   <text class="s" x="788" y="322" text-anchor="middle">one row per shot</text>
   <text class="s" x="788" y="340" text-anchor="middle">read via mcp-clickhouse</text>
   <text class="s" x="788" y="358" text-anchor="middle">(MCP server)</text>

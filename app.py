@@ -41,6 +41,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+# The only eager import from the pipeline: it is pure constants and path
+# resolution, so it costs nothing, and every route needs to know what a
+# finished job is called on disk.
+from frameflow import artifacts as af
+
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 JOBS_DIR = HERE / "jobs"
@@ -393,9 +398,9 @@ def run_remote(job: dict, clip: Path, opts: dict):
 
     log("downloading results...")
     ok = False
-    for remote, local in (("/content/out/screenx_summary.json",
-                           outdir / "screenx_summary.json"),
-                          ("/content/out/screenx_demo.mp4", outdir / "screenx_demo.mp4"),
+    for remote, local in ((f"/content/out/{af.SUMMARY}", outdir / af.SUMMARY),
+                          (f"/content/out/{af.LEGACY_SUMMARY}", outdir / af.SUMMARY),
+                          (f"/content/out/{af.DEMO}", outdir / af.DEMO),
                           ("/content/out/deliverable/master_widened.mp4",
                            outdir / "deliverable" / "master_widened.mp4"),
                           ("/content/out/deliverable/left.mp4",
@@ -407,7 +412,7 @@ def run_remote(job: dict, clip: Path, opts: dict):
         c, _o = cr.download(remote, Path(local))
         ok = ok or (c == 0 and Path(local).exists())
 
-    summary = outdir / "screenx_summary.json"
+    summary = af.summary_path(outdir)
     if summary.exists():
         try:
             job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
@@ -457,7 +462,7 @@ def run_job(job: dict, clip: Path, opts: dict):
             job["state"], job["error"] = "error", f"{type(e).__name__}: {e}"
             return
 
-        summary = outdir / "screenx_summary.json"
+        summary = af.summary_path(outdir)
         if code == 0 and summary.exists():
             try:
                 job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
@@ -530,7 +535,7 @@ def run_polish(job: dict, repair: str | None, shots: str = "",
     # A settle re-cuts the deliverable too, so the players must be pointed at
     # the new files even though no number changed.
     if p["repaired"] or p["settled"]:
-        summary = d / "screenx_summary.json"
+        summary = af.summary_path(d)
         try:
             job["summary"] = json.loads(summary.read_text(encoding="utf-8"))
             job["shots"] = job["summary"].get("per_shot", job.get("shots") or [])
@@ -552,9 +557,9 @@ def known_jobs() -> list:
            for j in JOBS.values()}
     if JOBS_DIR.exists():
         for d in sorted(JOBS_DIR.iterdir(), reverse=True):
-            if d.is_dir() and (d / "screenx_summary.json").exists() and d.name not in out:
+            if d.is_dir() and af.has_summary(d) and d.name not in out:
                 try:
-                    s = json.loads((d / "screenx_summary.json").read_text(encoding="utf-8"))
+                    s = json.loads(af.summary_path(d).read_text(encoding="utf-8"))
                 except ValueError:
                     continue
                 out[d.name] = dict(id=d.name, name=s.get("source", d.name),
@@ -566,7 +571,7 @@ def known_jobs() -> list:
 # ------------------------------------------------------------------ http
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ScreenXStudio"
+    server_version = "Frameflow"
 
     def log_message(self, fmt, *args):
         pass                                    # the render log is the useful one
@@ -685,6 +690,15 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             root = JOBS_DIR / m.group(1)
             target = under(root, m.group(2))
+            # A job rendered before the project was called Frameflow has its
+            # summary and review cut under the old names. The browser asks for
+            # the current ones, so the fallback lives here rather than in the
+            # front end, which should not have to know the project was renamed.
+            if target is not None and not target.is_file():
+                legacy = {af.SUMMARY: af.LEGACY_SUMMARY, af.DEMO: af.LEGACY_DEMO}
+                alt = legacy.get(target.name)
+                if alt:
+                    target = under(root, alt)
             if target is None or not target.is_file():
                 return self._send(404, b"not found", "text/plain")
             return self._file(target)
@@ -716,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
         point the record was built.
         """
         d = JOBS_DIR / jid
-        f = d / "screenx_summary.json"
+        f = af.summary_path(d)
         if not f.exists():
             return None
         try:
@@ -955,7 +969,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "job is still rendering"}, 409)
         if (job.get("polish") or {}).get("state") == "running":
             return self._json({"error": "already polishing"}, 409)
-        if not (JOBS_DIR / jid / "screenx_summary.json").exists():
+        if not af.has_summary(JOBS_DIR / jid):
             return self._json({"error": "nothing to polish yet — convert first"}, 409)
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -1036,8 +1050,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
         except (ValueError, TypeError):
             return self._json({"error": "bad json"}, 400)
-        allowed = {"WAVESPEED_API_KEY", "GEMINI_API_KEY", "SCREENX_ENDPOINT",
-                   "SCREENX_TOKEN"}
+        allowed = {"WAVESPEED_API_KEY", "GEMINI_API_KEY",
+                   "FRAMEFLOW_ENDPOINT", "FRAMEFLOW_TOKEN",
+                   "SCREENX_ENDPOINT", "SCREENX_TOKEN"}   # pre-rename names still read
         for name, value in (body or {}).items():
             if name not in allowed:
                 return self._json({"error": f"unknown credential {name}"}, 400)

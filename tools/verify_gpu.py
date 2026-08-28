@@ -1,7 +1,7 @@
 """
 verify_gpu -- prove the CUDA half of Tier 2 actually works.
 
-Run on a GPU host:  python verify_gpu.py
+Run on a GPU host:  python tools/verify_gpu.py
 
 `test_splat.py` and `test_tier2.py` cover everything that runs on CPU. Two
 functions cannot be covered there -- `fit_splats` and `render_widened` -- and

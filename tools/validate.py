@@ -22,7 +22,7 @@ from frameflow import wingcoverage as wc
 # `media/` beside this file. These were absolute paths from the machine this was
 # first written on, so on any other machine the script reported a missing file
 # -- or, on Windows, silently looked in C:\home\claude\test. Run
-# `python make_test_clip.py` to produce all three.
+# `python tools/make_test_clip.py` to produce all three.
 MEDIA = os.environ.get(
     "FRAMEFLOW_MEDIA",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "media"))

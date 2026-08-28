@@ -488,7 +488,7 @@ function renderReport() {
       Object.entries(s.gate).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")
     : "";
 
-  $("#video").src = `/api/jobs/${state.job}/file/screenx_demo.mp4`;
+  $("#video").src = `/api/jobs/${state.job}/file/frameflow_demo.mp4`;
   $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4`;
 
   $("#finaltable tbody").innerHTML = rows.map(r => `
@@ -502,7 +502,7 @@ function renderReport() {
 }
 
 $("#dl").addEventListener("click", () => {
-  if (state.job) location.href = `/api/jobs/${state.job}/file/screenx_summary.json`;
+  if (state.job) location.href = `/api/jobs/${state.job}/file/frameflow_summary.json`;
 });
 
 /* ---------------------------------------------------------- finishing pass */
@@ -569,7 +569,7 @@ async function pollPolish() {
        * as though it had done nothing. */
       const v = `?v=${Date.now()}`;
       $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4${v}`;
-      $("#video").src = `/api/jobs/${state.job}/file/screenx_demo.mp4${v}`;
+      $("#video").src = `/api/jobs/${state.job}/file/frameflow_demo.mp4${v}`;
       renderPolish(p);
     }
   }

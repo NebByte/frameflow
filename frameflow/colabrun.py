@@ -172,7 +172,8 @@ out = subprocess.run(["bash", "-lc",
 alive, _, log = out.partition("@@log")
 print("@@ALIVE" if alive.strip() else "@@IDLE")
 print(log)
-print("@@SUMMARY", os.path.exists("/content/out/screenx_summary.json"))
+print("@@SUMMARY", os.path.exists("/content/out/frameflow_summary.json")
+      or os.path.exists("/content/out/screenx_summary.json"))
 '''
 
 

@@ -1,7 +1,7 @@
 """
 ledger -- every shot's verdict, in a table somebody can question.
 
-A render already writes `screenx_summary.json` beside the job. That is the
+A render already writes a summary beside the job. That is the
 right home for one film and the wrong home for a catalogue: the question a
 studio actually asks is not "how did this shot do" but
 
@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from . import artifacts as af
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -209,7 +210,7 @@ def rows_from(summary, findings=None, run_id=None, ran_at=None):
 def read_job(job_dir):
     """The summary and, if one exists, the inspection beside it."""
     job = Path(job_dir)
-    summary = json.loads((job / "screenx_summary.json").read_text(encoding="utf-8"))
+    summary = json.loads(af.summary_path(job).read_text(encoding="utf-8"))
     findings = None
     rp = job / "polish_report.json"
     if rp.exists():

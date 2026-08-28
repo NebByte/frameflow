@@ -1,10 +1,10 @@
 # The café clip, re-run on the current build -- 2026-08-22
 
 Source: `IMG_0683.mov`, 1920x1080 landscape, 178 frames, 5.9s, one continuous
-handheld pan across a food court. The same footage behind `screenx_cafe_demo.mp4`
+handheld pan across a food court. The same footage behind `frameflow_cafe_demo.mp4`
 from the earlier build.
 
-    python screenx_render.py IMG_0683.mov -o out --maxw 640 --frames-per-shot 200
+    python -m frameflow.render IMG_0683.mov -o out --maxw 640 --frames-per-shot 200
 
 No GPU, no COLMAP, no --prefer-3d, no API keys. CPU propagation path.
 

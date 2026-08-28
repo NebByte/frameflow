@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid
+from frameflow import artifacts as af
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
@@ -64,7 +65,7 @@ def list_films() -> dict:
     jobs = []
     if JOBS.is_dir():
         for j in sorted(p for p in JOBS.iterdir() if p.is_dir()):
-            s = j / "screenx_summary.json"
+            s = af.summary_path(j)
             if not s.exists():
                 continue
             try:
@@ -155,7 +156,7 @@ def render_film(video: str, working_width: int = 480, frames_per_shot: int = 200
                    max_shots=int(max_shots) or None,
                    frames_per_shot=int(frames_per_shot),
                    deliver="deliverable")
-            s = outdir / "screenx_summary.json"
+            s = af.summary_path(outdir)
             if s.exists():
                 state["summary"] = json.loads(s.read_text(encoding="utf-8"))
             state["state"] = "done"
@@ -178,7 +179,7 @@ def render_status(job: str) -> dict:
     with _LOCK:
         st = _RUNS.get(job)
     if st is None:
-        d = JOBS / job / "screenx_summary.json"
+        d = af.summary_path(JOBS / job)
         if d.exists():
             return dict(ok=True, job=job, state="done",
                         summary=json.loads(d.read_text(encoding="utf-8")))
@@ -208,7 +209,7 @@ def inspect_walls(job: str) -> dict:
         job: a job id, or the name of a directory under jobs/.
     """
     d = JOBS / job
-    if not (d / "screenx_summary.json").exists():
+    if not af.has_summary(d):
         return _fail(f"no rendered job at {d}")
     try:
         from frameflow import polish
@@ -232,7 +233,7 @@ def settle_walls(job: str) -> dict:
         job: a job id, or the name of a directory under jobs/.
     """
     d = JOBS / job
-    if not (d / "screenx_summary.json").exists():
+    if not af.has_summary(d):
         return _fail(f"no rendered job at {d}")
     try:
         from frameflow import polish
@@ -258,7 +259,7 @@ def record_run(job: str) -> dict:
         job: a job id, or the name of a directory under jobs/.
     """
     d = JOBS / job
-    if not (d / "screenx_summary.json").exists():
+    if not af.has_summary(d):
         return _fail(f"no rendered job at {d}")
     try:
         from frameflow import ledger

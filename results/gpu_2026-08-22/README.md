@@ -4,7 +4,7 @@ Colab T4, torch 2.11.0+cu128, gsplat 1.5.3, COLMAP from apt.
 Footage: "Drone flight over park" (Wikimedia Commons, CC BY-SA 4.0),
 1280x720, 664 frames, 33.2s, transcoded to h264. Run as:
 
-    python screenx_render.py drone.mp4 -o out --maxw 480 \
+    python -m frameflow.render drone.mp4 -o out --maxw 480 \
         --sfm sfm --prefer-3d --sources --max-shots 3
 
 ## What is new here
@@ -60,7 +60,7 @@ measured", not "bad".
 which is not the shot's frame list: `build_scene` submits at most
 max_frames_per_setup (24) while the render loads SFM_FRAMES (40), and a
 multi-setup scene carries the other setup's views too. `seed_points` pairs
-frames[i] with pose i. Fixed in `screenx_render.align_to_poses` using
+frames[i] with pose i. Fixed in `frameflow.render.align_to_poses` using
 `model.views` as the authority. Pinned by `test_render_frames_match_pose_order`.
 
 The IndexError was the lucky failure: it fires only when the lists differ in

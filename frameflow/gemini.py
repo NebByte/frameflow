@@ -152,8 +152,12 @@ class GeminiVision:
     def __init__(self, token=None, model=DEFAULT_VISION_MODEL, style="auto",
                  max_claims=4, transport=_post, project=None,
                  location=DEFAULT_LOCATION, answer_shape=None):
-        self.token = token or os.environ.get("GEMINI_API_KEY", "") or \
-            os.environ.get("SCREENX_TOKEN", "")
+        # FRAMEFLOW_TOKEN is the current name; SCREENX_TOKEN is still read
+        # so a shell profile written before the rename keeps working.
+        self.token = (token
+                      or os.environ.get("GEMINI_API_KEY", "")
+                      or os.environ.get("FRAMEFLOW_TOKEN", "")
+                      or os.environ.get("SCREENX_TOKEN", ""))
         self.model = model
         self.style = style
         self.max_claims = max_claims
@@ -285,8 +289,12 @@ class GeminiImageEdit:
 
     def __init__(self, token=None, model="gemini-2.5-flash-image", style="auto",
                  transport=_post, project=None, location=DEFAULT_LOCATION):
-        self.token = token or os.environ.get("GEMINI_API_KEY", "") or \
-            os.environ.get("SCREENX_TOKEN", "")
+        # FRAMEFLOW_TOKEN is the current name; SCREENX_TOKEN is still read
+        # so a shell profile written before the rename keeps working.
+        self.token = (token
+                      or os.environ.get("GEMINI_API_KEY", "")
+                      or os.environ.get("FRAMEFLOW_TOKEN", "")
+                      or os.environ.get("SCREENX_TOKEN", ""))
         # same keyless route as GeminiVision: Vertex accepts the cloud-platform
         # scope this machine already holds, so nothing is pasted or rotated
         self.location = location

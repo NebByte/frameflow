@@ -3,7 +3,7 @@
 Two cuts of one picture: `videoplayback.mp4` (120.1s) and
 `videoplayback (1).mp4` (129.6s).
 
-    python screenx_render.py videoplayback.mp4 \
+    python -m frameflow.render videoplayback.mp4 \
         --other-cut "videoplayback (1).mp4" -o out --maxw 480 --sources
 
 ## First: the rung had no caller at all

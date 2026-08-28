@@ -38,6 +38,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from . import artifacts as af
 
 # Shots whose wings are real. Polishing one is allowed and costs something
 # measurable, which is why the states are named rather than inlined.
@@ -272,9 +273,9 @@ def inspect(job_dir, vision=None, per_shot=2, verbose=True):
     useful -- but they are marked as not repairable.
     """
     job = Path(job_dir)
-    summary_path = job / "screenx_summary.json"
+    summary_path = af.summary_path(job)
     if not summary_path.exists():
-        raise FileNotFoundError(f"no screenx_summary.json in {job}")
+        raise FileNotFoundError(f"no {af.SUMMARY} in {job}")
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
 
     if vision is None:
@@ -444,7 +445,7 @@ def settle(job_dir, k=2, verbose=True):
     from . import render as sx
     from . import wingcoverage as wc
     job = Path(job_dir)
-    summary_path = job / "screenx_summary.json"
+    summary_path = af.summary_path(job)
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     shots_dir = job / "deliverable" / "shots"
     if not shots_dir.is_dir():
@@ -579,7 +580,7 @@ def repair(job_dir, generator="wavespeed", shots=None, verbose=True,
         raise ValueError(f"unknown generator {generator}")
     gen = make()
 
-    summary_path = job / "screenx_summary.json"
+    summary_path = af.summary_path(job)
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     by_shot = {int(r.get("shot", -1)): r for r in summary.get("per_shot", [])}
     shots_dir = job / "deliverable" / "shots"
@@ -813,7 +814,7 @@ def rebuild(job_dir, verbose=True):
     from . import render as sx
     from . import walls as wl
     job = Path(job_dir)
-    summary_path = job / "screenx_summary.json"
+    summary_path = af.summary_path(job)
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     deliv = job / "deliverable"
     shots_dir = deliv / "shots"
