@@ -58,3 +58,17 @@ docs/SUBMISSION.md
 # The built video. Regenerate with: python tools/make_demo_video.py
 frameflow_demo_video.mp4
 frameflow_demo_preview.mp4
+
+# Renders of copyrighted trailer footage. The measurements in docs/RESEARCH-LOG.md
+# describe them and stay; the frames themselves are not ours to redistribute.
+results/real_footage_recovered.png
+results/unified_cross_cut.png
+results/all_rotation_shots_wing022.png
+results/cross_cut_donation.png
+
+# Renders of private footage -- a home, and a cafe with identifiable faces.
+results/apartment_screenx.png
+results/room2_screenx.png
+results/room_screenx_frames.png
+results/landscape_screenx.png
+
