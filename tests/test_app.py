@@ -509,6 +509,40 @@ def test_the_studio_assets_are_reachable_where_the_html_asks():
         check(f"{ref} exists on disk", (root / ref.lstrip("/")).is_file())
 
 
+def test_the_studio_calls_its_api_where_it_is_actually_served():
+    """
+    The same bug as above, one layer down, and it survived the fix.
+
+    The assets were made reachable, so the Studio came up styled and looked
+    right -- but every fetch in app.js was still ROOT absolute, "/api/jobs".
+    Served at the root by `python app.py` that is correct. Proxied under
+    /studio/ it lands on the agent app, which answers {"detail":"Not Found"},
+    so the capability panel spins forever and the page reports "No jobs yet"
+    over a seeded job that /studio/api/jobs will happily return.
+
+    Nothing errored. The page loaded. Only the calls it made were wrong, which
+    is exactly why looking at /studio/ returning 200 did not catch it.
+
+    app.js derives a base from location.pathname now, so it is right in both
+    places. This asserts it stays derived.
+    """
+    print("")
+    print("the studio calls its api relative to where it is served")
+    js = (Path(app.HERE) / "static" / "app.js").read_text(encoding="utf-8")
+    code = "\n".join(l for l in js.splitlines() if not l.lstrip().startswith("*"))
+
+    check("app.js derives an API base from location.pathname",
+          "location.pathname" in code and "const API" in code)
+
+    stray = re.findall(r'(?<!\$\{API\})/api/', code)
+    check("no fetch bypasses that base", not stray,
+          f"{len(stray)} absolute /api/ path(s) left")
+
+    server_src = (Path(app.HERE) / "server.py").read_text(encoding="utf-8")
+    check("server.py forwards everything under /studio to the studio",
+          "/studio{path:path}" in server_src or "/studio/{path:path}" in server_src)
+
+
 if __name__ == "__main__":
     print("app -- the serving layer")
     test_safe_name()
@@ -528,6 +562,7 @@ if __name__ == "__main__":
     test_every_id_is_unique()
     test_polish_is_reachable_and_priced()
     test_the_studio_assets_are_reachable_where_the_html_asks()
+    test_the_studio_calls_its_api_where_it_is_actually_served()
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:

@@ -11,6 +11,18 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+/* Where the API lives, relative to wherever this page is served from.
+ *
+ * These used to be absolute "/api/...", which works when app.py serves the
+ * Studio at the root and silently breaks behind server.py, where the Studio is
+ * proxied under /studio/ and an absolute path lands on the ADK app instead --
+ * 404, a permanently-spinning capability panel, and "No jobs yet" over a job
+ * that is sitting right there. The page loaded fine, which is what made it easy
+ * to miss: only the calls it made were wrong.
+ *
+ * "/studio/" -> "/studio";  "/" -> "".  Both correct, no config either side. */
+const API = location.pathname.replace(/\/(index\.html)?$/, "");
+
 const state = { job: null, shots: [], summary: null, caps: null, sel: null, file: null };
 
 const pct  = v => (v == null ? "—" : (v * 100).toFixed(1) + "%");
@@ -68,7 +80,7 @@ function syncKeyPanel() {
 }
 
 async function loadCaps() {
-  const caps = state.caps = await (await fetch("/api/capabilities")).json();
+  const caps = state.caps = await (await fetch(`${API}/api/capabilities`)).json();
   $("#caps").innerHTML = Object.entries(caps).map(([, c]) => `
     <div class="check ${c.ok ? "" : "off"}">
       <span style="color:${c.ok ? "var(--real)" : "var(--ink-faint)"}">${c.ok ? "●" : "○"}</span>
@@ -95,7 +107,7 @@ async function loadCaps() {
 
 $("#savekey").addEventListener("click", async () => {
   const key = $("#wskey").value.trim();
-  const res = await fetch("/api/keys", {
+  const res = await fetch(`${API}/api/keys`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ GEMINI_API_KEY: key }),
   });
@@ -109,7 +121,7 @@ $("#savekey").addEventListener("click", async () => {
 /* -------------------------------------------------------------------- jobs */
 
 async function loadJobs() {
-  const jobs = await (await fetch("/api/jobs")).json();
+  const jobs = await (await fetch(`${API}/api/jobs`)).json();
   $("#jobcount").textContent = jobs.length ? `${jobs.length} on this machine` : "";
   $("#jobs tbody").innerHTML = jobs.length ? jobs.map(j => `
     <tr data-job="${esc(j.id)}">
@@ -125,12 +137,12 @@ $("#jobs").addEventListener("click", async e => {
   const del = e.target.closest("[data-del]");
   if (del) {
     e.stopPropagation();
-    await fetch(`/api/jobs/${del.dataset.del}`, { method: "DELETE" });
+    await fetch(`${API}/api/jobs/${del.dataset.del}`, { method: "DELETE" });
     return loadJobs();
   }
   const id = e.target.closest("tr")?.dataset.job;
   if (!id) return;
-  const job = await (await fetch(`/api/jobs/${id}`)).json();
+  const job = await (await fetch(`${API}/api/jobs/${id}`)).json();
   if (job.error) return;
   state.job = id; state.shots = job.shots || []; state.summary = job.summary;
   unlock("review"); unlock("report");
@@ -173,7 +185,7 @@ function accept(file) {
       <p class="note" id="upstate" style="margin-top:10px">staging&hellip;</p>`;
     URL.revokeObjectURL(v.src);
 
-    const res = await fetch(`/api/jobs?name=${encodeURIComponent(file.name)}`,
+    const res = await fetch(`${API}/api/jobs?name=${encodeURIComponent(file.name)}`,
                             { method: "POST", body: file });
     const out = await res.json();
     if (out.error) { $("#upstate").textContent = out.error; return; }
@@ -196,7 +208,7 @@ $$("[data-attach]").forEach(input => {
     if (!state.job) return;
     for (const f of input.files) {
       const q = `kind=${input.dataset.attach}&name=${encodeURIComponent(f.name)}`;
-      const res = await fetch(`/api/jobs/${state.job}/attach?${q}`,
+      const res = await fetch(`${API}/api/jobs/${state.job}/attach?${q}`,
                               { method: "POST", body: f });
       const out = await res.json();
       if (out.error) { $("#attached").textContent = out.error; return; }
@@ -222,7 +234,7 @@ $("#analyse").addEventListener("click", async () => {
   if (!state.job) return;
   $("#analyse").disabled = true;
   $("#analyse").textContent = "Detecting…";
-  const out = await (await fetch(`/api/jobs/${state.job}/analyse`, { method: "POST" })).json();
+  const out = await (await fetch(`${API}/api/jobs/${state.job}/analyse`, { method: "POST" })).json();
   $("#analyse").disabled = false;
   $("#analyse").textContent = "Detect shots";
   if (out.error) { $("#analysemeta").textContent = out.error; return; }
@@ -299,7 +311,7 @@ $("#run").addEventListener("click", async () => {
   $("#runstate").textContent = "starting";
   $("#live tbody").innerHTML = ""; $("#log").textContent = ""; state.shots = [];
 
-  const res = await fetch(`/api/jobs/${state.job}/start`, {
+  const res = await fetch(`${API}/api/jobs/${state.job}/start`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(options()),
   });
@@ -312,7 +324,7 @@ $("#run").addEventListener("click", async () => {
 });
 
 function watch(id) {
-  const src = new EventSource(`/api/jobs/${id}/events`);
+  const src = new EventSource(`${API}/api/jobs/${id}/events`);
   src.addEventListener("shot", e => {
     const rec = JSON.parse(e.data);
     state.shots.push(rec);
@@ -421,7 +433,7 @@ function renderDetail(r) {
   $("#notesave").addEventListener("click", async () => {
     const text = $("#notetext").value.trim();
     if (!text || !state.job) return;
-    const res = await fetch(`/api/jobs/${state.job}/notes`, {
+    const res = await fetch(`${API}/api/jobs/${state.job}/notes`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shot: r.shot, text }),
     });
@@ -434,10 +446,10 @@ function renderDetail(r) {
 
 async function loadFiles() {
   if (!state.job) return;
-  const files = await (await fetch(`/api/jobs/${state.job}/files`)).json();
+  const files = await (await fetch(`${API}/api/jobs/${state.job}/files`)).json();
   if (files.error) return;
   $("#files tbody").innerHTML = files.map(f => `
-    <tr><td><a href="/api/jobs/${state.job}/file/${encodeURI(f.name)}"
+    <tr><td><a href="${API}/api/jobs/${state.job}/file/${encodeURI(f.name)}"
       style="color:var(--ink-dim)">${esc(f.name)}</a></td>
     <td class="n">${mb(f.bytes)}</td></tr>`).join("");
 }
@@ -510,8 +522,8 @@ function renderReport() {
       Object.entries(s.gate).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")
     : "";
 
-  $("#video").src = `/api/jobs/${state.job}/file/frameflow_demo.mp4`;
-  $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4`;
+  $("#video").src = `${API}/api/jobs/${state.job}/file/frameflow_demo.mp4`;
+  $("#delivered").src = `${API}/api/jobs/${state.job}/file/deliverable/master_widened.mp4`;
 
   $("#finaltable tbody").innerHTML = rows.map(r => `
     <tr><td class="n">${r.shot}</td><td>${esc(r.motion)}</td><td>${esc(r.backend)}</td>
@@ -524,7 +536,7 @@ function renderReport() {
 }
 
 $("#dl").addEventListener("click", () => {
-  if (state.job) location.href = `/api/jobs/${state.job}/file/frameflow_summary.json`;
+  if (state.job) location.href = `${API}/api/jobs/${state.job}/file/frameflow_summary.json`;
 });
 
 /* ---------------------------------------------------------- finishing pass */
@@ -554,7 +566,7 @@ $("#polishrun").addEventListener("click", async () => {
   if (!state.job) return;
   $("#polishrun").disabled = true;
   $("#polishstate").textContent = "starting…";
-  const res = await fetch(`/api/jobs/${state.job}/polish`, {
+  const res = await fetch(`${API}/api/jobs/${state.job}/polish`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ repair: $("#polishgen").value || null,
                            shots: $("#polishshots").value.trim() }),
@@ -570,7 +582,7 @@ $("#polishrun").addEventListener("click", async () => {
 
 async function pollPolish() {
   if (!state.job) return;
-  const p = await (await fetch(`/api/jobs/${state.job}/polish`)).json();
+  const p = await (await fetch(`${API}/api/jobs/${state.job}/polish`)).json();
   if (p.error && !p.report) $("#polishstate").textContent = p.error;
   renderPolish(p);
   if (p.state === "running") { setTimeout(pollPolish, 900); return; }
@@ -579,7 +591,7 @@ async function pollPolish() {
   /* A repaint moves the headline down. Leaving the old figure on screen would
    * report pixels as filmed that a model drew a minute ago. */
   if ((p.repaired || []).length || (p.settled || []).length) {
-    const job = await (await fetch(`/api/jobs/${state.job}`)).json();
+    const job = await (await fetch(`${API}/api/jobs/${state.job}`)).json();
     if (job.summary) {
       state.summary = job.summary;
       state.shots = job.summary.per_shot || state.shots;
@@ -588,8 +600,8 @@ async function pollPolish() {
        * would keep showing the cached, faulted cut and the polish would look
        * as though it had done nothing. */
       const v = `?v=${Date.now()}`;
-      $("#delivered").src = `/api/jobs/${state.job}/file/deliverable/master_widened.mp4${v}`;
-      $("#video").src = `/api/jobs/${state.job}/file/frameflow_demo.mp4${v}`;
+      $("#delivered").src = `${API}/api/jobs/${state.job}/file/deliverable/master_widened.mp4${v}`;
+      $("#video").src = `${API}/api/jobs/${state.job}/file/frameflow_demo.mp4${v}`;
       renderPolish(p);
     }
   }
@@ -655,7 +667,7 @@ function renderPolish(p) {
  * the model agree before trusting either. */
 async function loadPolish() {
   if (!state.job) return;
-  const p = await (await fetch(`/api/jobs/${state.job}/polish`)).json();
+  const p = await (await fetch(`${API}/api/jobs/${state.job}/polish`)).json();
   if (p && p.state && p.state !== "none") renderPolish(p);
 }
 
