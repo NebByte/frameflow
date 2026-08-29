@@ -72,3 +72,6 @@ results/room2_screenx.png
 results/room_screenx_frames.png
 results/landscape_screenx.png
 
+# Screen recordings of the deployed service, for the demo video. Regenerate:
+#   python tools/record_captures.py && python tools/cut_captures.py
+media/captures/

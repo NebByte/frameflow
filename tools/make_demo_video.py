@@ -189,12 +189,10 @@ def caption(img, lines, y=None, small=False):
 # CLEAN_BANDS below.
 DURATIONS = {
     "scene_title": 14.0,   # four lines, and the last one needs a beat
-    "scene_refusal": 14.0,   # the green refusal needs to breathe before the next line
     "scene_conversion": 16.7,  # exactly the clean stretches below, nothing trimmed
     "scene_feeds": 14.0,
     "scene_lines": 12.0,
     "scene_settle": 14.0,    # four before/after rows to compare, not read
-    "scene_ledger": 26.0,    # the money slide: table, then the conclusion under it
     "scene_close": 16.0,     # URLs a judge may want to copy
 }
 
@@ -216,6 +214,84 @@ def place_logo(img: Image.Image, xy, box):
 
 
 # ------------------------------------------------------------------ scenes
+
+CAPTURES = ROOT / "media" / "captures"
+
+
+def play_capture(reel, name, label, note, seconds=None, tail=1.2):
+    """
+    A screen recording of the deployed service, framed and captioned.
+
+    These exist because the contest asks for a video "showing your project
+    functioning as built -- not a cinematic trailer", and the scenes these
+    replaced were typeset reconstructions: the transcripts were real, but a
+    script drew them onto slides. What plays here is Chromium driving the live
+    Cloud Run service, recorded by tools/record_captures.py. Nothing is redrawn
+    -- the only edits are trimming and speeding the waits, and the caption
+    says when a wait was sped.
+
+    Returns False if the capture is missing, so the build still runs on a
+    machine that has not recorded them.
+    """
+    path = CAPTURES / name
+    if not path.is_file():
+        print(f"  ! missing capture {path.name} -- scene skipped")
+        return False
+    frames = read_clip(path)
+    if not frames:
+        return False
+    if seconds:
+        want = int(seconds * FPS)
+        frames = frames[:want] if len(frames) >= want else frames
+
+    for f in frames:
+        img = np.full((H, W, 3), BG[::-1], np.uint8)
+        v = fit(f, 1600, 900)
+        x, y, w, h = paste(img, v, W / 2, 570)
+        cv2.rectangle(img, (x - 1, y - 1), (x + w, y + h), (48, 54, 61), 1)
+        pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        d = ImageDraw.Draw(pil)
+        text(d, (110, 62), label, F(34), DIM)
+        text(d, (110, 1022), note, F(32), BLUE)
+        reel.frame(cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR))
+
+    if tail and frames:                    # hold the last frame so it can be read
+        f = frames[-1]
+        img = np.full((H, W, 3), BG[::-1], np.uint8)
+        v = fit(f, 1600, 900)
+        x, y, w, h = paste(img, v, W / 2, 570)
+        cv2.rectangle(img, (x - 1, y - 1), (x + w, y + h), (48, 54, 61), 1)
+        pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        d = ImageDraw.Draw(pil)
+        text(d, (110, 62), label, F(34), DIM)
+        text(d, (110, 1022), note, F(32), BLUE)
+        reel.hold(pil, tail)
+    return True
+
+
+def scene_agent(reel):
+    """The deployed agent refusing a shot, recorded live."""
+    play_capture(
+        reel, "agent.mp4",
+        "the deployed agent on Cloud Run — recorded live, waits sped up to 8×",
+        "supervisor → scout → triage_film → a refusal, with its reasons.")
+
+
+def scene_studio(reel):
+    """The Studio's conversion report for a finished job."""
+    play_capture(
+        reel, "studio.mp4",
+        "Frameflow Studio — the same service, a finished conversion",
+        "89.0% of the wall photographed, 0 shots generated. Both are measured.")
+
+
+def scene_ledger_live(reel):
+    """The archivist composing its own SQL through the ClickHouse MCP server."""
+    play_capture(
+        reel, "ledger.mp4",
+        "the archivist, over the official ClickHouse MCP server — waits sped up to 8×",
+        "It writes its own SQL — schema first, then query after query.")
+
 
 def scene_title(reel):
     """The problem, with the numbers that make it a problem."""
@@ -243,39 +319,6 @@ def scene_title(reel):
          F(36), BLUE)
     reel.hold(img, DURATIONS['scene_title'] * 0.58)
 
-
-def scene_refusal(reel):
-    """The agent saying no, which is the thing most tools cannot do."""
-    lines = [
-        ("> Is locked_off.mp4 worth converting?", FG, 0.9),
-        ("", DIM, 0.15),
-        ("  supervisor \u2192 scout", DIM, 0.5),
-        ("  scout: triage_film(video=\"locked_off.mp4\")", AMBER, 1.1),
-        ("", DIM, 0.15),
-        ("  No. The camera is locked off, so nothing was filmed", GREEN, 0.9),
-        ("  beyond the central frame and no side walls can be", GREEN, 0.5),
-        ("  recovered from its own footage.", GREEN, 0.5),
-        ("  Not worth spending artist time on.", GREEN, 1.9),
-    ]
-    shown = []
-    for s, col, hold in lines:
-        shown.append((s, col))
-        img = canvas()
-        d = ImageDraw.Draw(img)
-        text(d, (110, 90), "the agent, on the deployed service", F(30), DIM)
-        for i, (t, c) in enumerate(shown):
-            text(d, (110, 190 + i * 58), t, MONO(38), c)
-        reel.hold(img, hold)
-
-    img = canvas()
-    d = ImageDraw.Draw(img)
-    for i, (t, c) in enumerate(shown):
-        text(d, (110, 190 + i * 58), t, MONO(38), c)
-    text(d, (110, 800), "7 seconds per shot, instead of hours per film.", F(44, True), BLUE)
-    text(d, (110, 880),
-         "Same motion classifier, geometry probe and gate a real render uses \u2014\n"
-         "so a shot it clears is one a render will clear.", F(32), DIM)
-    reel.hold(img, max(1.0, DURATIONS['scene_refusal'] - 6.6))
 
 
 # Stretches of the gym master whose wings are actually filled, as frame indices.
@@ -437,50 +480,6 @@ def scene_settle(reel):
     reel.hold(img, DURATIONS['scene_settle'])
 
 
-def scene_ledger(reel):
-    """The question a studio actually asks, answered as a query."""
-    img = canvas()
-    d = ImageDraw.Draw(img)
-    text(d, (110, 110), "The studio question isn't \"how did this shot do\".", F(40), DIM)
-    text(d, (110, 190), "It's \u2014", F(40), DIM)
-    text(d, (110, 280),
-         "across everything we own,\nwhat converts without inventing anything?",
-         F(56, True), FG)
-    text(d, (110, 480), "That is a query. So refused shots have to be rows.", F(36), BLUE)
-    reel.hold(img, DURATIONS['scene_ledger'] * 0.27)
-
-    lines = [
-        ("> Query the ledger. Which source has the highest", FG),
-        ("  mean_real_wing, and where did we invent?", FG),
-        ("", DIM),
-        ("  supervisor \u2192 archivist", DIM),
-        ("  archivist: ledger_run_query        (ClickHouse MCP)", AMBER),
-        ("", DIM),
-        ("  source                     generated   photographed", DIM),
-        ("  pan_flat.mp4                  0.1101         0.8899", GREEN),
-        ("  gym pan  (HD render)          0.0957         0.9043", GREEN),
-        ("  cafe     (IMG_0683.mov)       0.0131         0.9869", GREEN),
-        ("  gym pan  (after a repaint)    0.6270         0.3730", RED),
-        ("  cafe     (generator test)     1.0000         0.0000", RED),
-    ]
-    img = canvas()
-    d = ImageDraw.Draw(img)
-    text(d, (110, 80), "the archivist, querying real rows over the ClickHouse MCP server",
-         F(30), DIM)
-    for i, (t, c) in enumerate(lines):
-        text(d, (110, 175 + i * 52), t, MONO(34), c)
-    reel.hold(img, DURATIONS['scene_ledger'] * 0.40)
-
-    img2 = img.copy()
-    d = ImageDraw.Draw(img2)
-    text(d, (110, 860),
-         "The repaint cost two thirds of the photography, and the ledger says so.",
-         F(34), RED)
-    text(d, (110, 920),
-         "A ledger of successes answers \"what did we convert\".\n"
-         "It never answers \"what could we have\".", F(32), DIM)
-    reel.hold(img2, DURATIONS['scene_ledger'] * 0.33)
-
 
 def scene_close(reel):
     """The line the whole thing exists to hold."""
@@ -522,8 +521,13 @@ def scene_close(reel):
     reel.hold(img, DURATIONS['scene_close'] * 0.45)
 
 
-SCENES = [scene_title, scene_refusal, scene_conversion, scene_feeds,
-          scene_lines, scene_settle, scene_ledger, scene_close]
+# Order matters: state the problem, then SHOW the agent refusing, then show the
+# footage it earns, then show the Studio and the ledger. The two scenes that
+# used to sit at positions 2 and 7 were typeset reconstructions of transcripts;
+# they are screen recordings of the deployed service now.
+SCENES = [scene_title, scene_agent, scene_conversion, scene_feeds,
+          scene_lines, scene_settle, scene_studio, scene_ledger_live,
+          scene_close]
 
 
 def main():
